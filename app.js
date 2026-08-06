@@ -2084,3 +2084,90 @@ pages.system=function(){
 document.title='Studio OS v2.2.3 · Home State Layout Sync';
 const brand223=document.querySelector('.brand small');if(brand223)brand223.textContent='Home State Sync · v2.2.3';
 buildNav();current='home';$('#pageName').textContent='Home';pages.home();
+
+/* =========================================================
+   Studio OS v2.2.4 · Schedule & Daily Work Log Operations
+   - Schedule edit / complete / delete
+   - Goal criteria instead of manual progress
+   - GPT Daily Closing progress evaluation import
+   - One Work Log per date, same-day overwrite
+   - Year / month Work Log filters
+   ========================================================= */
+(function initV224(){
+  data.workLogFilter224=data.workLogFilter224||{year:String(new Date().getFullYear()),month:String(new Date().getMonth()+1).padStart(2,'0')};
+  (data.tasks||[]).forEach(t=>{t.goalCriteria=t.goalCriteria||t.goal||'';t.progressReason=t.progressReason||'';t.progressEvaluatedAt=t.progressEvaluatedAt||'';});
+  data.experiences=data.experiences||[];data.releaseNotes=data.releaseNotes||[];
+  if(!data.experiences.some(x=>x.id==='EXP-044'))data.experiences.unshift({id:'EXP-044',title:'Schedule 삭제·자동 공정률 및 Work Log 중복 기록',domain:'Operations',severity:'High',issue:'일정 삭제 기능과 목표 기준이 없고 반복 출퇴근 시 동일 날짜 보고가 계속 누적됨',cause:'Task와 Attendance를 생성 중심으로 구현하고 날짜 단위 Upsert 규칙을 적용하지 않음',solution:'Schedule CRUD, GPT 평가 진행률, 날짜별 Work Log 1건 및 연·월 필터 적용',prevention:'소모성 일정은 수정·완료·삭제를 제공하고 일일 운영 기록은 날짜 키로 덮어쓴다',status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.2.4'});
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.2.4'))data.releaseNotes.unshift({id:'RN-2.2.4',version:'v2.2.4',date:'2026-08-06',title:'Schedule & Work Log Operations',newItems:['Schedule 삭제·완료','목표 기준','GPT 진행률 평가','Work Log 연·월 필터'],improved:['날짜별 Work Log 1건 유지','동일 날짜 덮어쓰기'],fixed:['EXP-044'],removed:['Task 수동 진행률 슬라이더'],experiences:['EXP-044']});
+  saveData();
+})();
+
+function deleteTaskV224(id){
+  const t=v21AllTasks().find(x=>x.id===id);if(!t)return;
+  if(!confirm(`“${t.title}” 일정을 삭제할까요?`))return;
+  if(t.source==='workspace'){
+    const w=data.workspaces[t.projectId];if(w)w.tasks=(w.tasks||[]).filter(x=>x.id!==t.rawId);
+  }else data.tasks=(data.tasks||[]).filter(x=>x.id!==t.id);
+  v20LogEvent('Task',`일정 삭제 · ${t.title}`,v21TaskProjectName(t));saveData();closeModal();renderTasksV21();toast('일정을 삭제했습니다.');
+}
+function completeTaskV224(id){
+  const t=v21AllTasks().find(x=>x.id===id);if(!t)return;
+  t.workflow='Done';t.done=true;t.progress=100;t.progressReason='사용자가 완료 처리';t.progressEvaluatedAt=new Date().toISOString();t.completedAt=new Date().toISOString();v21SaveTask(t);
+  v20LogEvent('Task',`일정 완료 · ${t.title}`,v21TaskProjectName(t));closeModal();renderTasksV21();toast('일정을 완료했습니다.');
+}
+openTaskEditorV21=function(id='',date=v21ISO(new Date())){
+  const all=v21AllTasks(),t=all.find(x=>x.id===id)||{title:'',projectId:data.projects[0]?.id||'',startDate:date,dueDate:date,priority:'Medium',workflow:'Ready',progress:0,estimate:60,source:'global',goalCriteria:'',progressReason:'',progressEvaluatedAt:''};
+  const evaluated=t.progressEvaluatedAt?new Date(t.progressEvaluatedAt).toLocaleString('ko-KR'):'아직 평가되지 않음';
+  openModal(id?'Schedule 편집':'Schedule 추가',`<label>일정명<input id="taskTitle21" value="${esc(t.title)}"></label><label>목표 기준<textarea id="taskGoal224" rows="3" placeholder="완료로 판단할 수 있는 결과물을 적어주세요.">${esc(t.goalCriteria||'')}</textarea></label><div class="form-grid"><label>프로젝트<select id="taskProject21">${data.projects.map(p=>`<option value="${p.id}" ${t.projectId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label>우선순위<select id="taskPriority21">${['Critical','High','Medium','Low'].map(x=>`<option ${t.priority===x?'selected':''}>${x}</option>`).join('')}</select></label></div><div class="form-grid"><label>시작일<input id="taskStart21" type="date" value="${t.startDate}"></label><label>마감일<input id="taskDue21" type="date" value="${t.dueDate}"></label></div><div class="form-grid"><label>상태<select id="taskFlow21">${['Not Started','Ready','In Progress','Review','Blocked','Done','Archive'].map(x=>`<option ${t.workflow===x?'selected':''}>${x}</option>`).join('')}</select></label><label>예상시간(분)<input id="taskEstimate21" type="number" value="${t.estimate||60}"></label></div><section class="gpt-progress-224"><span>GPT 평가 진행률</span><strong>${Number(t.progress||0)}%</strong><i><b style="width:${Number(t.progress||0)}%"></b></i><p>${esc(t.progressReason||'퇴근 파일 적용 시 목표 기준과 결과물을 비교해 자동 평가합니다.')}</p><small>${esc(evaluated)}</small></section>${id?`<div class="modal-actions-224"><button type="button" onclick="completeTaskV224('${id}')">완료 처리</button><button type="button" class="danger" onclick="deleteTaskV224('${id}')">삭제</button></div>`:''}`,()=>{
+    const title=$('#taskTitle21').value.trim();if(!title)return toast('일정명을 입력하세요.');const flow=$('#taskFlow21').value;const obj={...t,title,goalCriteria:$('#taskGoal224').value.trim(),projectId:$('#taskProject21').value,startDate:$('#taskStart21').value,dueDate:$('#taskDue21').value,priority:$('#taskPriority21').value,workflow:flow,estimate:Number($('#taskEstimate21').value)||60,done:flow==='Done',timing:`${$('#taskDue21').value} · ${$('#taskEstimate21').value}분`,status:$('#taskPriority21').value,bucket:'today'};
+    if(flow==='Done'){obj.progress=100;obj.progressReason=obj.progressReason||'상태를 Done으로 변경';obj.progressEvaluatedAt=new Date().toISOString();obj.completedAt=obj.completedAt||new Date().toISOString();}
+    if(id)v21SaveTask(obj);else{obj.id=uid('t');obj.progress=0;obj.createdAt=new Date().toISOString();data.tasks.unshift(obj);saveData();}
+    v20LogEvent('Task',`${id?'일정 수정':'일정 생성'} · ${title}`,v21TaskProjectName(obj));closeModal();renderTasksV21();toast('일정을 저장했습니다.');
+  });
+};
+
+function applyScheduleProgressV224(p){
+  const rows=Array.isArray(p?.scheduleProgress)?p.scheduleProgress:[];let changed=0;
+  rows.forEach(r=>{
+    let t=v21AllTasks().find(x=>r.taskId&&x.id===r.taskId);
+    if(!t&&r.title)t=v21AllTasks().find(x=>String(x.title).trim()===String(r.title).trim()&&(!r.project||v21TaskProjectName(x)===r.project));
+    if(!t)return;const value=Math.max(0,Math.min(100,Number(r.progress)||0));t.progress=value;t.progressReason=String(r.reason||'GPT Daily Closing 평가');t.progressEvaluatedAt=r.evaluatedAt||new Date().toISOString();
+    if(value>=100){t.workflow='Done';t.done=true;t.completedAt=t.completedAt||new Date().toISOString();}else if(value>0&&['Ready','Not Started'].includes(t.workflow))t.workflow='In Progress';
+    v21SaveTask(t);changed++;
+  });
+  return changed;
+}
+const applyDailyClosingV224Base=applyDailyClosingV218;
+applyDailyClosingV218=function(){const p=pendingPatch19;applyDailyClosingV224Base();if(p){const n=applyScheduleProgressV224(p);if(n){saveData();toast(`Schedule 진행률 ${n}건을 GPT 평가로 갱신했습니다.`);}}};
+const dailyClosingPayloadV224Base=dailyClosingPayloadV218;
+dailyClosingPayloadV218=function(log){const p=dailyClosingPayloadV224Base(log);p.scheduleProgress=p.scheduleProgress||[];return p;};
+
+function consolidateDailyRecordsV224(){
+  const merge=(arr)=>{const map=new Map();(arr||[]).forEach(r=>{const key=r.date||String(r.clockOut||r.clockIn||'').slice(0,10);if(!key)return;const old=map.get(key);if(!old){map.set(key,{...r,date:key});return;}const ins=[old.clockIn,r.clockIn].filter(Boolean).sort();const outs=[old.clockOut,r.clockOut].filter(Boolean).sort();const clockIn=ins[0],clockOut=outs[outs.length-1];map.set(key,{...old,...r,date:key,clockIn,clockOut,minutes:clockIn&&clockOut?Math.max(0,Math.round((new Date(clockOut)-new Date(clockIn))/60000)):Math.max(Number(old.minutes)||0,Number(r.minutes)||0)});});return [...map.values()].sort((a,b)=>String(b.date).localeCompare(String(a.date)));};
+  data.dailyReports=merge(data.dailyReports).slice(0,366);data.workMode.logs=merge(data.workMode.logs).slice(0,366);
+  const seen=new Set();data.workMode.events=(data.workMode.events||[]).filter(e=>{if(e.type!=='Attendance')return true;const key=`${String(e.date).slice(0,10)}|${e.title}`;if(seen.has(key))return false;seen.add(key);return true;});saveData();
+}
+consolidateDailyRecordsV224();
+
+clockOutV20=function(){
+  if(data.workMode.status!=='Working')return toast('현재 근무 중이 아닙니다.');
+  const now=new Date(),date=v20DateKey(now),existing=(data.dailyReports||[]).find(x=>x.date===date);const currentStart=new Date(data.workMode.clockIn||now);const oldStart=existing?.clockIn?new Date(existing.clockIn):currentStart;const start=oldStart<currentStart?oldStart:currentStart;const mins=Math.max(0,Math.round((now-start)/60000));const s=v20TodayWorkspaceStats();
+  const report={...(existing||{}),id:existing?.id||uid('DR'),date,clockIn:start.toISOString(),clockOut:now.toISOString(),minutes:mins,optional:!!data.workMode.optional,...s,summary:`완료 ${s.completed}건 · 활동 ${s.activity}건 · 자산 ${s.assets}건`};
+  data.dailyReports=(data.dailyReports||[]).filter(x=>x.date!==date);data.dailyReports.unshift(report);
+  const logExisting=(data.workMode.logs||[]).find(x=>x.date===date);data.workMode.logs=(data.workMode.logs||[]).filter(x=>x.date!==date);data.workMode.logs.unshift({...report,id:logExisting?.id||uid('WL')});
+  data.workMode.events=(data.workMode.events||[]).filter(e=>!(e.type==='Attendance'&&String(e.date).startsWith(date)&&String(e.title).includes('퇴근')));v20LogEvent('Attendance','퇴근 및 Daily Report 업데이트','Studio OS');
+  data.workMode.status='Off';data.workMode.clockOut=now.toISOString();data.workMode.optional=false;
+  const mem=(data.memories||[]).find(x=>x.type==='Work Log'&&String(x.title).includes(date));if(mem){mem.title=`Daily Work Report · ${date}`;mem.detail=`${v20Duration(mins)} · ${report.summary}`;mem.date='방금';}else data.memories.unshift({id:uid('m'),title:`Daily Work Report · ${date}`,detail:`${v20Duration(mins)} · ${report.summary}`,type:'Work Log',date:'방금'});
+  saveData();renderCurrentHomeV223();openDailyReportV20(report.id);toast('오늘의 Work Log를 업데이트했습니다.');
+};
+
+function setWorkLogFilterV224(kind,value){data.workLogFilter224[kind]=value;saveData();renderWorkLogV224();}
+function renderWorkLogV224(){
+  consolidateDailyRecordsV224();const reports=data.dailyReports||[],events=data.workMode.events||[],manual=data.manualWorkLogs||[];const years=[...new Set(reports.map(r=>String(r.date).slice(0,4)).filter(Boolean).concat(String(new Date().getFullYear())))].sort().reverse();const f=data.workLogFilter224;const list=reports.filter(r=>String(r.date).startsWith(`${f.year}-${f.month}`));
+  $('#content').innerHTML=`<div class="page-title"><div><span class="eyebrow">DAILY OPERATIONS</span><h1>Work Log</h1><p>하루에 하나의 근무 기록을 유지하고 같은 날짜의 재기록은 최신 결과로 갱신합니다.</p></div><div class="page-actions"><button class="primary-btn compact" onclick="addFounderLogV21()">+ 대표 업무일지</button><button class="tab" onclick="importAISessionV21()">AI Session Import</button><button class="tab" onclick="generateClosingBriefV21()">GPT Closing Brief</button></div></div><div class="worklog-filter-224"><label>Year<select onchange="setWorkLogFilterV224('year',this.value)">${years.map(y=>`<option ${f.year===y?'selected':''}>${y}</option>`).join('')}</select></label><label>Month<select onchange="setWorkLogFilterV224('month',this.value)">${Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')).map(m=>`<option value="${m}" ${f.month===m?'selected':''}>${Number(m)}월</option>`).join('')}</select></label><strong>${f.year}년 ${Number(f.month)}월 · ${list.length}일</strong></div><section class="panel worklog-list-224"><div class="worklog-head-224"><span>Date</span><span>Working Hours</span><span>Duration</span><span>Type</span><span></span></div>${list.map(r=>`<button onclick="openDailyReportV20('${r.id}')"><time>${esc(r.date)}</time><span>${v20FormatTime(r.clockIn)}–${v20FormatTime(r.clockOut)}</span><strong>${v20Duration(r.minutes)}</strong><em>${r.optional?'선택 근무':'정규 근무'}</em><b>보기 →</b></button>`).join('')||emptyLine('선택한 월의 Work Log가 없습니다.')}</section><div class="worklog-secondary-224"><section class="panel"><div class="panel-head"><div><span class="eyebrow">OS AUTO</span><h3>최근 자동 활동</h3></div></div><div class="activity-stream-v20">${events.slice(0,20).map(e=>`<div><time>${new Date(e.date).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><span></span><p><strong>${esc(e.title)}</strong><small>${esc(e.project)} · ${esc(e.type)}</small></p></div>`).join('')||emptyLine('자동 기록이 없습니다.')}</div></section><section class="panel"><div class="panel-head"><div><span class="eyebrow">FOUNDER</span><h3>대표 업무일지</h3></div></div><div class="founder-logs-v21">${manual.slice(0,20).map(x=>`<article><time>${new Date(x.date).toLocaleDateString('ko-KR')}</time><strong>${esc(x.work||x.type||'업무일지')}</strong><small>${esc(x.project)}</small></article>`).join('')||emptyLine('대표 업무일지가 없습니다.')}</div></section></div>`;
+}
+pages.worklog=renderWorkLogV224;renderWorkLog=renderWorkLogV224;
+
+const renderRoadmapV224Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV224Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.2.4'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.2.4 · Schedule & Work Log Operations — 현재</strong><p>Schedule CRUD·GPT 자동 진행률·날짜별 Work Log 1건·연월 필터</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV224Base=pages.system;pages.system=function(){renderSystemV224Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Schedule & Work Log Operations</p></div><div class="system-value-222"><strong>Studio OS v2.2.4</strong></div>';};
+document.title='Studio OS v2.2.4 · Schedule & Work Log Operations';const brand224=document.querySelector('.brand small');if(brand224)brand224.textContent='Schedule & Work Log · v2.2.4';buildNav();
