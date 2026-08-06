@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f3f0ea" />
+  <title>Studio OS v2.1.9 · Daily Closing Result Visibility</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">S</span><div><strong>Studio OS</strong><small>Result Visibility · v2.1.9</small></div></div>
+      <nav id="nav"></nav>
+      <div class="sidebar-footer">
+        <div class="system-chip"><span class="pulse"></span><div><strong>System ready</strong><small>All data saved locally</small></div></div>
+        <button class="profile"><span>대표</span><small>Founder workspace</small></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu">☰</button>
+        <div class="breadcrumb"><span>Studio OS</span><b>/</b><strong id="pageName">Home</strong></div>
+        <div class="top-actions">
+          <button class="icon-btn" id="searchBtn" aria-label="검색">⌕</button>
+          <button class="icon-btn notification-btn" id="notificationBtn" aria-label="알림">◉<span>3</span></button>
+          <div class="clock" id="clock">--:--</div>
+        </div>
+      </header>
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+
+  <div class="overlay hidden" id="overlay">
+    <div class="command-panel">
+      <div class="command-input-wrap"><span>⌕</span><input id="commandInput" placeholder="프로젝트, 메모, 기능 검색..." /></div>
+      <div id="commandResults" class="command-results"></div>
+      <div class="command-hint"><span>↑↓ 이동</span><span>Enter 열기</span><span>ESC 닫기</span></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
