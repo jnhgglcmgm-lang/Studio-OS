@@ -2171,3 +2171,152 @@ pages.worklog=renderWorkLogV224;renderWorkLog=renderWorkLogV224;
 const renderRoadmapV224Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV224Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.2.4'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.2.4 · Schedule & Work Log Operations — 현재</strong><p>Schedule CRUD·GPT 자동 진행률·날짜별 Work Log 1건·연월 필터</p></div>');};pages.roadmap=renderRoadmap;
 const renderSystemV224Base=pages.system;pages.system=function(){renderSystemV224Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Schedule & Work Log Operations</p></div><div class="system-value-222"><strong>Studio OS v2.2.4</strong></div>';};
 document.title='Studio OS v2.2.4 · Schedule & Work Log Operations';const brand224=document.querySelector('.brand small');if(brand224)brand224.textContent='Schedule & Work Log · v2.2.4';buildNav();
+
+/* =========================================================
+   Studio OS v2.2.5 · Asset Finder & Registry Merge
+   - Finder-style project navigation from v0.6
+   - Current metadata, quality, version, status and reuse links
+   - Compact three-pane management layout
+   ========================================================= */
+(function initV225(){
+  data.assetFinder225=data.assetFinder225||{project:'All',type:'All',search:'',selectedId:''};
+  const state=data.assetFinder225;
+  if(!state.selectedId||!data.digitalAssets.some(a=>a.id===state.selectedId))state.selectedId=data.digitalAssets[0]?.id||'';
+  data.experiences=data.experiences||[];data.releaseNotes=data.releaseNotes||[];
+  if(!data.experiences.some(x=>x.id==='EXP-045'))data.experiences.unshift({id:'EXP-045',title:'Assets 카드형 대시보드의 탐색 효율 저하',domain:'UI/UX',severity:'Medium',issue:'자산 메타데이터는 풍부하지만 카드가 커서 프로젝트별 파일을 빠르게 찾기 어렵고 자산 증가 시 스크롤이 길어짐',cause:'자산 소개와 평가 중심으로 화면을 확장하면서 Finder형 분류·탐색 구조가 약화됨',solution:'v0.6의 프로젝트 Finder 구조와 현재 버전·품질·재사용·연결 메타데이터를 3단 레이아웃으로 통합',prevention:'자산 화면은 소개보다 탐색을 우선하고 상세 정보는 선택된 자산 패널에서 제공',status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.2.5'});
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.2.5'))data.releaseNotes.unshift({id:'RN-2.2.5',version:'v2.2.5',date:'2026-08-06',title:'Asset Finder & Registry Merge',newItems:['프로젝트 Finder','유형 필터','선택 자산 상세 패널'],improved:['자산 탐색 밀도','버전·품질·재사용 정보 접근성'],fixed:['EXP-045'],removed:['Registry의 대형 카드 중심 탐색'],experiences:['EXP-045']});
+  saveData();
+})();
+
+function assetFinderProjects225(){return ['All',...new Set((data.digitalAssets||[]).map(a=>a.project||'공통').filter(Boolean))];}
+function assetFinderTypes225(){return ['All',...new Set((data.digitalAssets||[]).map(a=>a.type||'Other').filter(Boolean))];}
+function assetFinderFiltered225(){
+  const s=data.assetFinder225||{},q=String(s.search||'').trim().toLowerCase();
+  return (data.digitalAssets||[]).filter(a=>{
+    const project=a.project||'공통';
+    if(s.project&&s.project!=='All'&&project!==s.project)return false;
+    if(s.type&&s.type!=='All'&&a.type!==s.type)return false;
+    return !q||assetSearchTextV17(a).includes(q);
+  }).sort((a,b)=>String(b.updated||'').localeCompare(String(a.updated||''))||String(a.name).localeCompare(String(b.name),'ko'));
+}
+function setAssetFinder225(key,value){data.assetFinder225[key]=value;if(key==='project'||key==='type'||key==='search'){const first=assetFinderFiltered225()[0];data.assetFinder225.selectedId=first?.id||'';}saveData();renderAssetsV225();}
+function selectAssetFinder225(id){data.assetFinder225.selectedId=id;saveData();renderAssetFinderBody225();}
+function assetIcon225(type){const t=String(type||'').toLowerCase();if(t.includes('pdf')||t.includes('document')||t.includes('report'))return 'PDF';if(t.includes('image')||t.includes('design'))return '▧';if(t.includes('source')||t.includes('application')||t.includes('html'))return '⌘';if(t.includes('audio')||t.includes('music'))return '♪';if(t.includes('video'))return '▶';if(t.includes('data'))return '▦';if(t.includes('prompt'))return 'AI';return '□';}
+function renderAssetsV225(){
+  const connected=(data.digitalAssets||[]).filter(a=>a.resource||a.externalUrl||a.location).length;
+  const reusable=(data.digitalAssets||[]).filter(a=>['Reusable','Frozen'].includes(a.status)||avgQualityV17(a)>=80).length;
+  const avg=Math.round((data.digitalAssets||[]).reduce((s,a)=>s+avgQualityV17(a),0)/Math.max(1,(data.digitalAssets||[]).length));
+  $('#content').innerHTML=`<div class="page-title asset-title-225"><div><span class="eyebrow">ASSET FINDER</span><h1>Assets</h1><p>프로젝트별 자산을 빠르게 찾고, 선택한 자산의 버전·품질·재사용·연결 정보를 관리합니다.</p></div><button class="primary-btn compact" onclick="openAssetModalV16()">자산 등록</button></div>
+  <div class="asset-summary-225"><div><small>전체 자산</small><strong>${data.digitalAssets.length}</strong></div><div><small>실제 리소스</small><strong>${connected}</strong></div><div><small>재사용 후보</small><strong>${reusable}</strong></div><div><small>평균 품질</small><strong>${avg}%</strong></div></div>
+  <div class="asset-finder-tools-225 panel"><input value="${esc(data.assetFinder225.search||'')}" oninput="setAssetFinder225('search',this.value)" placeholder="자산·프로젝트·파일 검색"><select onchange="setAssetFinder225('type',this.value)">${assetFinderTypes225().map(x=>`<option ${data.assetFinder225.type===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+  <div id="assetFinderBody225"></div>`;
+  renderAssetFinderBody225();
+}
+function renderAssetFinderBody225(){
+  const box=$('#assetFinderBody225');if(!box)return;const state=data.assetFinder225,arr=assetFinderFiltered225();
+  if(!arr.some(a=>a.id===state.selectedId))state.selectedId=arr[0]?.id||'';
+  const selected=(data.digitalAssets||[]).find(a=>a.id===state.selectedId);
+  const projects=assetFinderProjects225();
+  box.innerHTML=`<div class="asset-finder-layout-225 panel">
+    <aside class="asset-project-tree-225"><button class="${state.project==='All'?'active':''}" onclick="setAssetFinder225('project','All')"><span>▾ All Assets</span><b>${data.digitalAssets.length}</b></button>${projects.filter(x=>x!=='All').map(p=>{const n=data.digitalAssets.filter(a=>(a.project||'공통')===p).length;return `<button class="${state.project===p?'active':''}" onclick="setAssetFinder225('project',${JSON.stringify(p)})"><span>› ${esc(p)}</span><b>${n}</b></button>`}).join('')}</aside>
+    <section class="asset-file-list-225"><div class="asset-list-head-225"><strong>${state.project==='All'?'All Assets':esc(state.project)}</strong><small>${arr.length} items</small></div>${arr.map(a=>`<button class="asset-file-row-225 ${state.selectedId===a.id?'active':''}" onclick="selectAssetFinder225('${a.id}')"><span class="asset-file-icon-225">${assetIcon225(a.type)}</span><span class="asset-file-text-225"><strong>${esc(a.name)}</strong><small>${esc(a.type)} · v${esc(a.version)} · ${esc(a.updated||'날짜 없음')}</small></span><em>${esc(a.status)}</em></button>`).join('')||emptyLine('조건에 맞는 자산이 없습니다.')}</section>
+    <aside class="asset-detail-225">${selected?assetDetailFinder225(selected):'<div class="asset-empty-detail-225">자산을 선택하세요.</div>'}</aside>
+  </div>`;
+}
+function assetDetailFinder225(a){
+  const uses=(a.usageProjects||[]),related=(a.relatedIds||[]).map(id=>assetById(id)).filter(Boolean),quality=avgQualityV17(a);
+  return `<div class="asset-detail-head-225"><span class="asset-file-icon-225 large">${assetIcon225(a.type)}</span><div><small>${esc(a.kind||'Asset')} · ${esc(a.type||'Other')}</small><h2>${esc(a.name)}</h2><p>${esc(a.project||'공통')} · v${esc(a.version||'1.0')}</p></div></div>
+  <div class="asset-quality-225"><span><i style="width:${quality}%"></i></span><b>Quality ${quality}%</b></div>
+  <dl class="asset-detail-list-225"><div><dt>Status</dt><dd>${esc(a.status||'Draft')}</dd></div><div><dt>Updated</dt><dd>${esc(a.updated||'-')}</dd></div><div><dt>Location</dt><dd title="${esc(a.location||a.externalUrl||'연결 없음')}">${esc(a.location||a.externalUrl||'연결 없음')}</dd></div><div><dt>Usage</dt><dd>${uses.length?uses.map(esc).join(' · '):'미연결'}</dd></div><div><dt>Related</dt><dd>${related.length?related.map(x=>esc(x.name)).join(' · '):'없음'}</dd></div></dl>
+  <div class="asset-note-225"><small>설명·보완사항</small><p>${esc(a.note||'등록된 메모가 없습니다.')}</p></div>
+  <div class="asset-detail-actions-225"><button onclick="openAssetModalV16('${a.id}')">관리</button>${(a.resource||a.externalUrl||a.location)?`<button onclick="openAssetResourceV16('${a.id}')">열기</button>`:''}</div>`;
+}
+pages.assets=renderAssetsV225;renderAssetsV14=renderAssetsV225;
+
+const renderRoadmapV225Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV225Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.2.5'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.2.5 · Asset Finder & Registry Merge — 현재</strong><p>v0.6 Finder 탐색 구조와 현재 자산 메타데이터·품질·재사용 관리 기능 통합</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV225Base=pages.system;pages.system=function(){renderSystemV225Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Asset Finder & Registry Merge</p></div><div class="system-value-222"><strong>Studio OS v2.2.5</strong></div>';};
+document.title='Studio OS v2.2.5 · Asset Finder & Registry Merge';const brand225=document.querySelector('.brand small');if(brand225)brand225.textContent='Asset Finder · v2.2.5';buildNav();
+
+/* =========================================================
+   Studio OS v2.2.6 · Asset Finder Interaction & Layout Patch
+   - Project tree applies a real filter
+   - Expandable project/type navigation
+   - Fixed middle-pane header and independent list scroll
+   - Type dropdown placed before search
+   ========================================================= */
+(function initV226(){
+  data.assetFinder225=data.assetFinder225||{project:'All',type:'All',search:'',selectedId:''};
+  data.assetFinder225.expandedProject=data.assetFinder225.expandedProject||'';
+  data.experiences=data.experiences||[];data.releaseNotes=data.releaseNotes||[];
+  if(!data.experiences.some(x=>x.id==='EXP-046'))data.experiences.unshift({id:'EXP-046',title:'Asset Finder project filter and list header interaction failure',domain:'UI/UX',severity:'High',issue:'좌측 프로젝트를 눌러도 중앙 목록이 전체 자산으로 유지되고 중앙 헤더와 첫 행이 겹쳐 탐색 상태를 신뢰하기 어려움',cause:'프로젝트 선택 이벤트의 문자열 전달이 불안정했고 헤더와 목록이 하나의 스크롤 컨테이너를 공유함',solution:'dataset 기반 프로젝트 선택, 프로젝트별 실제 필터, 독립 스크롤 목록과 고정 헤더, 필터 우선 툴바로 재구성',prevention:'탐색 트리는 선택 상태뿐 아니라 결과 집합 변화를 반드시 동반하고 헤더와 콘텐츠 스크롤 영역을 분리',status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.2.6'});
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.2.6'))data.releaseNotes.unshift({id:'RN-2.2.6',version:'v2.2.6',date:'2026-08-06',title:'Asset Finder Interaction & Layout',newItems:['프로젝트별 실제 자산 필터','Finder형 프로젝트/유형 펼침','중앙 목록 독립 스크롤'],improved:['검색·유형 필터 순서','선택 상태 유지','프로젝트별 개수 자동 계산'],fixed:['좌측 프로젝트 클릭 무반응','중앙 헤더와 첫 목록 겹침'],experiences:['EXP-046']});
+  saveData();
+})();
+
+function assetProjectCount226(project,type='All'){
+  return (data.digitalAssets||[]).filter(a=>(a.project||'공통')===project&&(type==='All'||(a.type||'Other')===type)).length;
+}
+function assetProjectTypes226(project){
+  return [...new Set((data.digitalAssets||[]).filter(a=>(a.project||'공통')===project).map(a=>a.type||'Other'))].sort((a,b)=>String(a).localeCompare(String(b),'ko'));
+}
+function setAssetFinder226Project(project){
+  const s=data.assetFinder225;
+  if(project==='All'){
+    s.project='All';s.expandedProject='';
+  }else{
+    const same=s.project===project;
+    s.project=project;s.expandedProject=same&&s.expandedProject===project?'':project;
+  }
+  // A type that does not exist in the newly selected project is reset.
+  const available=project==='All'?assetFinderTypes225():['All',...assetProjectTypes226(project)];
+  if(!available.includes(s.type))s.type='All';
+  const first=assetFinderFiltered225()[0];s.selectedId=first?.id||'';
+  saveData();renderAssetFinderBody226();
+}
+function setAssetFinder226Type(type){
+  const s=data.assetFinder225;s.type=type;
+  const first=assetFinderFiltered225()[0];s.selectedId=first?.id||'';
+  saveData();renderAssetFinderBody226();
+}
+function setAssetFinder226Search(value){
+  const s=data.assetFinder225;s.search=value;
+  const first=assetFinderFiltered225()[0];s.selectedId=first?.id||'';
+  saveData();renderAssetFinderBody226();
+}
+function selectAssetFinder226(id){data.assetFinder225.selectedId=id;saveData();renderAssetFinderBody226();}
+
+function renderAssetsV226(){
+  const connected=(data.digitalAssets||[]).filter(a=>a.resource||a.externalUrl||a.location).length;
+  const reusable=(data.digitalAssets||[]).filter(a=>['Reusable','Frozen'].includes(a.status)||avgQualityV17(a)>=80).length;
+  const avg=Math.round((data.digitalAssets||[]).reduce((s,a)=>s+avgQualityV17(a),0)/Math.max(1,(data.digitalAssets||[]).length));
+  const state=data.assetFinder225;
+  const typeOptions=state.project==='All'?assetFinderTypes225():['All',...assetProjectTypes226(state.project)];
+  $('#content').innerHTML=`<div class="page-title asset-title-225"><div><span class="eyebrow">ASSET FINDER</span><h1>Assets</h1><p>프로젝트와 유형을 먼저 좁힌 뒤 자산을 검색하고 상세 정보를 관리합니다.</p></div><button class="primary-btn compact" onclick="openAssetModalV16()">자산 등록</button></div>
+  <div class="asset-summary-225"><div><small>전체 자산</small><strong>${data.digitalAssets.length}</strong></div><div><small>실제 리소스</small><strong>${connected}</strong></div><div><small>재사용 후보</small><strong>${reusable}</strong></div><div><small>평균 품질</small><strong>${avg}%</strong></div></div>
+  <div class="asset-finder-tools-225 asset-finder-tools-226 panel"><select aria-label="자산 유형" onchange="setAssetFinder226Type(this.value)">${typeOptions.map(x=>`<option ${state.type===x?'selected':''}>${esc(x)}</option>`).join('')}</select><input value="${esc(state.search||'')}" oninput="setAssetFinder226Search(this.value)" placeholder="자산·프로젝트·파일 검색"></div>
+  <div id="assetFinderBody225"></div>`;
+  renderAssetFinderBody226();
+}
+function renderAssetFinderBody226(){
+  const box=$('#assetFinderBody225');if(!box)return;
+  const state=data.assetFinder225,arr=assetFinderFiltered225();
+  if(!arr.some(a=>a.id===state.selectedId))state.selectedId=arr[0]?.id||'';
+  const selected=(data.digitalAssets||[]).find(a=>a.id===state.selectedId);
+  const projects=assetFinderProjects225().filter(x=>x!=='All');
+  const tree=`<button class="${state.project==='All'?'active':''}" onclick="setAssetFinder226Project('All')"><span>▾ All Assets</span><b>${data.digitalAssets.length}</b></button>`+projects.map(p=>{
+    const expanded=state.expandedProject===p;
+    const pAttr=esc(p);
+    const children=expanded?`<div class="asset-tree-children-226"><button class="${state.project===p&&state.type==='All'?'active':''}" data-project="${pAttr}" onclick="setAssetFinder226Project(this.dataset.project);event.stopPropagation()"><span>All types</span><b>${assetProjectCount226(p)}</b></button>${assetProjectTypes226(p).map(t=>`<button class="${state.project===p&&state.type===t?'active':''}" data-project="${pAttr}" data-type="${esc(t)}" onclick="data.assetFinder225.project=this.dataset.project;setAssetFinder226Type(this.dataset.type);event.stopPropagation()"><span>${esc(t)}</span><b>${assetProjectCount226(p,t)}</b></button>`).join('')}</div>`:'';
+    return `<div class="asset-tree-group-226"><button class="${state.project===p?'active':''}" data-project="${pAttr}" onclick="setAssetFinder226Project(this.dataset.project)"><span>${expanded?'⌄':'›'} ${esc(p)}</span><b>${assetProjectCount226(p)}</b></button>${children}</div>`;
+  }).join('');
+  box.innerHTML=`<div class="asset-finder-layout-225 asset-finder-layout-226 panel">
+    <aside class="asset-project-tree-225 asset-project-tree-226">${tree}</aside>
+    <section class="asset-file-list-225 asset-file-list-226"><div class="asset-list-head-225 asset-list-head-226"><strong>${state.project==='All'?'All Assets':esc(state.project)}${state.type!=='All'?` · ${esc(state.type)}`:''}</strong><small>${arr.length} items</small></div><div class="asset-file-scroll-226">${arr.map(a=>`<button class="asset-file-row-225 ${state.selectedId===a.id?'active':''}" onclick="selectAssetFinder226('${a.id}')"><span class="asset-file-icon-225">${assetIcon225(a.type)}</span><span class="asset-file-text-225"><strong>${esc(a.name)}</strong><small>${esc(a.type)} · v${esc(a.version)} · ${esc(a.updated||'날짜 없음')}</small></span><em>${esc(a.status)}</em></button>`).join('')||'<div class="asset-empty-list-226">조건에 맞는 자산이 없습니다.</div>'}</div></section>
+    <aside class="asset-detail-225">${selected?assetDetailFinder225(selected):'<div class="asset-empty-detail-225">자산을 선택하세요.</div>'}</aside>
+  </div>`;
+}
+pages.assets=renderAssetsV226;renderAssetsV14=renderAssetsV226;renderAssetsV225=renderAssetsV226;renderAssetFinderBody225=renderAssetFinderBody226;
+
+const renderRoadmapV226Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV226Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.2.6'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.2.6 · Asset Finder Interaction & Layout — 현재</strong><p>프로젝트 필터 연결·Finder형 유형 트리·목록 헤더/스크롤 분리·필터 우선 툴바</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV226Base=pages.system;pages.system=function(){renderSystemV226Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Asset Finder Interaction & Layout</p></div><div class="system-value-222"><strong>Studio OS v2.2.6</strong></div>';};
+document.title='Studio OS v2.2.6 · Asset Finder Interaction & Layout';const brand226=document.querySelector('.brand small');if(brand226)brand226.textContent='Asset Finder · v2.2.6';buildNav();
