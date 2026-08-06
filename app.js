@@ -2003,3 +2003,84 @@ pages.roadmap=renderRoadmap;
 document.title='Studio OS v2.2.2 · UI Consistency';
 const brand222=document.querySelector('.brand small');if(brand222)brand222.textContent='UI Consistency · v2.2.2';
 buildNav();current='home';$('#pageName').textContent='Home';renderHomeV221();
+
+/* =========================================================
+   Studio OS v2.2.3 · Home State Layout Sync Patch
+   - Clock-in / clock-out no longer call the legacy v2.0 Home renderer
+   - Offline / Working / Closed states share the same v2.2.1 Home layout
+   - Only Hero copy, buttons and attendance values change by state
+   ========================================================= */
+(function initV223(){
+  data.experiences=data.experiences||[];
+  data.releaseNotes=data.releaseNotes||[];
+  if(!data.experiences.some(x=>x.id==='EXP-043'))data.experiences.unshift({
+    id:'EXP-043',title:'출근 상태 전환 시 이전 Home 레이아웃 재등장',domain:'UI/UX',severity:'High',
+    issue:'출근 버튼을 누르면 v2.2.1에서 제거한 Today Command가 다시 나타나고 AI Collaboration 위치가 변경됨',
+    cause:'clockInV20·clockOutV20이 최신 pages.home이 아니라 과거 renderHomeV20을 직접 호출함',
+    solution:'상태 변경 후 항상 현재 등록된 pages.home 렌더러를 호출하도록 출퇴근 함수를 동기화',
+    prevention:'상태 변경 함수는 특정 버전 렌더러를 직접 호출하지 않고 라우터의 현재 페이지 렌더러를 사용',
+    status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.2.3'
+  });
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.2.3'))data.releaseNotes.unshift({
+    id:'RN-2.2.3',version:'v2.2.3',date:'2026-08-06',title:'Home State Layout Sync',
+    newItems:[],
+    improved:['출근 전·근무 중·퇴근 후 Home 본문 구조 통일','상태 전환 시 Hero만 갱신'],
+    fixed:['EXP-043','Today Command 재등장','AI Collaboration 위치 변경'],removed:[],experiences:['EXP-043']
+  });
+  saveData();
+})();
+
+function renderCurrentHomeV223(){
+  current='home';
+  $('#pageName').textContent='Home';
+  buildNav();
+  (pages.home||renderHomeV221)();
+}
+
+clockInV20=function(){
+  if(data.workMode.status==='Working')return toast('이미 근무 중입니다.');
+  data.workMode.status='Working';
+  data.workMode.clockIn=new Date().toISOString();
+  data.workMode.clockOut=null;
+  data.workMode.optional=v20IsHoliday();
+  v20LogEvent('Attendance',data.workMode.optional?'선택 근무 출근':'출근','Studio OS');
+  saveData();
+  renderCurrentHomeV223();
+  toast(data.workMode.optional?'선택 근무를 시작했습니다.':'출근 처리했습니다.');
+};
+
+clockOutV20=function(){
+  if(data.workMode.status!=='Working')return toast('현재 근무 중이 아닙니다.');
+  const now=new Date(),start=new Date(data.workMode.clockIn||now),mins=Math.max(0,Math.round((now-start)/60000));
+  const s=v20TodayWorkspaceStats();
+  const report={id:uid('DR'),date:v20DateKey(now),clockIn:data.workMode.clockIn,clockOut:now.toISOString(),minutes:mins,optional:!!data.workMode.optional,...s,summary:`완료 ${s.completed}건 · 활동 ${s.activity}건 · 자산 ${s.assets}건`};
+  data.dailyReports.unshift(report);data.dailyReports=data.dailyReports.slice(0,120);
+  data.workMode.logs.unshift({...report,id:uid('WL')});data.workMode.logs=data.workMode.logs.slice(0,120);
+  v20LogEvent('Attendance','퇴근 및 Daily Report 생성','Studio OS');
+  data.workMode.status='Off';data.workMode.clockOut=now.toISOString();data.workMode.optional=false;
+  data.memories.unshift({id:uid('m'),title:`Daily Work Report · ${report.date}`,detail:`${v20Duration(mins)} · ${report.summary}`,type:'Work Log',date:'방금'});
+  saveData();
+  renderCurrentHomeV223();
+  openDailyReportV20(report.id);
+  toast('퇴근 처리하고 Daily Report를 생성했습니다.');
+};
+
+const renderRoadmapV223Base=renderRoadmap;
+renderRoadmap=function(){
+  renderRoadmapV223Base();
+  const rows=document.querySelector('.roadmap-line');
+  if(rows&&!rows.textContent.includes('v2.2.3'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.2.3 · Home State Layout Sync — 현재</strong><p>출근·근무·퇴근 상태 전환 시 동일한 Home 구조를 유지하고 Hero 상태만 갱신</p></div>');
+};
+pages.roadmap=renderRoadmap;
+
+const renderSystemV223Base=pages.system;
+pages.system=function(){
+  renderSystemV223Base();
+  const rows=[...document.querySelectorAll('.system-row-222')];
+  const version=rows.find(x=>x.textContent.includes('Version'));
+  if(version)version.innerHTML='<div><h3>Version</h3><p>Home State Layout Sync</p></div><div class="system-value-222"><strong>Studio OS v2.2.3</strong></div>';
+};
+
+document.title='Studio OS v2.2.3 · Home State Layout Sync';
+const brand223=document.querySelector('.brand small');if(brand223)brand223.textContent='Home State Sync · v2.2.3';
+buildNav();current='home';$('#pageName').textContent='Home';pages.home();
