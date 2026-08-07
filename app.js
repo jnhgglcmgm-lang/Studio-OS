@@ -2320,3 +2320,896 @@ pages.assets=renderAssetsV226;renderAssetsV14=renderAssetsV226;renderAssetsV225=
 const renderRoadmapV226Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV226Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.2.6'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.2.6 · Asset Finder Interaction & Layout — 현재</strong><p>프로젝트 필터 연결·Finder형 유형 트리·목록 헤더/스크롤 분리·필터 우선 툴바</p></div>');};pages.roadmap=renderRoadmap;
 const renderSystemV226Base=pages.system;pages.system=function(){renderSystemV226Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Asset Finder Interaction & Layout</p></div><div class="system-value-222"><strong>Studio OS v2.2.6</strong></div>';};
 document.title='Studio OS v2.2.6 · Asset Finder Interaction & Layout';const brand226=document.querySelector('.brand small');if(brand226)brand226.textContent='Asset Finder · v2.2.6';buildNav();
+
+/* =========================================================
+   Studio OS v2.3.0 · Builder Foundation Patch
+   Builder progress: 20%
+   - Independent Builder page
+   - Builder Draft create / edit / duplicate / delete
+   - Four-step foundation wizard
+   - Per-field auto save and resume
+   - Builder data isolated from Projects
+   ========================================================= */
+(function initV230(){
+  data.builderDrafts=Array.isArray(data.builderDrafts)?data.builderDrafts:[];
+  data.builderRuns=Array.isArray(data.builderRuns)?data.builderRuns:[];
+  data.builderState=data.builderState||{tab:'drafts',activeDraftId:'',step:1};
+  data.experiences=data.experiences||[];
+  data.releaseNotes=data.releaseNotes||[];
+  if(!data.experiences.some(x=>x.id==='EXP-047'))data.experiences.unshift({
+    id:'EXP-047',title:'Builder drafts must be isolated from live Projects',domain:'Architecture',severity:'High',
+    issue:'검토 중인 설계가 Projects에 즉시 생성되면 실험용 프로젝트와 운영 프로젝트가 섞이고 삭제·중복 데이터가 누적될 수 있음',
+    cause:'설계 단계와 운영 단계를 동일 데이터 구조로 취급함',
+    solution:'builderDrafts와 builderRuns를 Projects와 분리하고 완료 시점에만 변환하도록 Builder Foundation 구성',
+    prevention:'모든 생성형 도구는 Draft → Validation → Commit 단계를 거치며 Draft 상태에서는 운영 데이터를 변경하지 않음',
+    status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.3.0'
+  });
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.0'))data.releaseNotes.unshift({
+    id:'RN-2.3.0',version:'v2.3.0',date:'2026-08-06',title:'Builder Foundation',
+    newItems:['Builder 독립 페이지','Draft 생성·저장·수정·복제·삭제','4단계 Foundation Wizard','필드 자동 저장·이어하기'],
+    improved:['Projects와 Builder 데이터 분리','설계 단계 진행 상태 표시'],
+    fixed:[],removed:[],experiences:['EXP-047']
+  });
+  if(!navItems.some(x=>x.id==='builder'))navItems.push({id:'builder',label:'Builder',ico:'◇'});
+  saveData();
+})();
+
+function builderNow230(){return new Date().toISOString();}
+function builderEmptyDraft230(){
+  const now=builderNow230();
+  return {
+    id:uid('BLD'),name:'Untitled Build',summary:'',status:'Draft',step:1,createdAt:now,updatedAt:now,
+    projectType:'',target:'',goal:'',audience:'',reference:'',constraints:'',notes:'',
+    completion:{basics:false,direction:false,guardrails:false,review:false}
+  };
+}
+function builderDraft230(id){return (data.builderDrafts||[]).find(x=>x.id===id);}
+function builderCompletion230(d){
+  const checks=[Boolean(d.name&&d.name!=='Untitled Build'),Boolean(d.projectType||d.target||d.goal),Boolean(d.constraints||d.notes),d.step>=4];
+  return Math.round(checks.filter(Boolean).length/4*100);
+}
+function createBuilderDraft230(){
+  const d=builderEmptyDraft230();data.builderDrafts.unshift(d);data.builderState.activeDraftId=d.id;data.builderState.step=1;data.builderState.tab='editor';saveData();renderBuilder230();toast('새 Builder Draft를 생성했습니다.');
+}
+function openBuilderDraft230(id){
+  const d=builderDraft230(id);if(!d)return;data.builderState.activeDraftId=id;data.builderState.step=Math.max(1,Math.min(4,Number(d.step||1)));data.builderState.tab='editor';saveData();renderBuilder230();
+}
+function duplicateBuilderDraft230(id){
+  const src=builderDraft230(id);if(!src)return;const now=builderNow230();const copy={...clone(src),id:uid('BLD'),name:`${src.name} Copy`,status:'Draft',createdAt:now,updatedAt:now};data.builderDrafts.unshift(copy);saveData();renderBuilder230();toast('Draft를 복제했습니다.');
+}
+function deleteBuilderDraft230(id){
+  const d=builderDraft230(id);if(!d)return;
+  if(!confirm(`“${d.name}” Draft를 삭제할까요?`))return;
+  data.builderDrafts=data.builderDrafts.filter(x=>x.id!==id);if(data.builderState.activeDraftId===id){data.builderState.activeDraftId='';data.builderState.tab='drafts';}saveData();renderBuilder230();toast('Draft를 삭제했습니다.');
+}
+function updateBuilderDraft230(field,value){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;d[field]=value;d.updatedAt=builderNow230();d.step=data.builderState.step;saveData();const status=$('#builderAutosave230');if(status){status.textContent='Saved';clearTimeout(window.builderSavedTimer230);window.builderSavedTimer230=setTimeout(()=>{if(status)status.textContent='Auto save';},1200);}const pct=$('#builderDraftProgress230');if(pct)pct.textContent=`${builderCompletion230(d)}%`;
+}
+function builderStep230(step){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;data.builderState.step=Math.max(1,Math.min(4,step));d.step=Math.max(Number(d.step||1),data.builderState.step);d.updatedAt=builderNow230();saveData();renderBuilder230();
+}
+function closeBuilderEditor230(){data.builderState.tab='drafts';data.builderState.activeDraftId='';saveData();renderBuilder230();}
+function setBuilderTab230(tab){data.builderState.tab=tab;saveData();renderBuilder230();}
+function builderField230(label,field,value,placeholder='',type='input'){
+  if(type==='textarea')return `<label class="builder-field-230"><span>${label}</span><textarea rows="5" placeholder="${esc(placeholder)}" oninput="updateBuilderDraft230('${field}',this.value)">${esc(value||'')}</textarea></label>`;
+  return `<label class="builder-field-230"><span>${label}</span><input value="${esc(value||'')}" placeholder="${esc(placeholder)}" oninput="updateBuilderDraft230('${field}',this.value)"></label>`;
+}
+function builderStepContent230(d,step){
+  if(step===1)return `<div class="builder-editor-grid-230">${builderField230('Build name','name',d.name,'프로젝트 또는 제품 이름')}${builderField230('One-line summary','summary',d.summary,'설계 의도를 한 줄로 정리')}</div><div class="builder-help-230"><strong>Foundation 1 · Basics</strong><p>이 패치에서는 Builder의 독립 Draft와 자동 저장 흐름을 먼저 검증합니다. 상세 앱 유형과 표준 템플릿은 v2.3.1부터 연결됩니다.</p></div>`;
+  if(step===2)return `<div class="builder-editor-grid-230">${builderField230('Project type memo','projectType',d.projectType,'예: 관리형 앱, 게임 앱, 문서')}${builderField230('Target platform','target',d.target,'예: Flutter Android · Web')}${builderField230('Primary goal','goal',d.goal,'완성 기준 또는 해결할 문제')}${builderField230('Primary user','audience',d.audience,'누가 사용하는지')}</div>`;
+  if(step===3)return `<div class="builder-editor-grid-230 single">${builderField230('Reference / baseline','reference',d.reference,'참고할 서비스, 기존 양식, 디자인 기준','textarea')}${builderField230('Constraints / must not change','constraints',d.constraints,'금지사항, 고정 UI, 보안 또는 운영 제약','textarea')}${builderField230('Additional notes','notes',d.notes,'GPT 제작 전에 전달할 추가 맥락','textarea')}</div>`;
+  return `<div class="builder-review-230"><div class="builder-review-head-230"><span class="eyebrow">FOUNDATION REVIEW</span><h2>${esc(d.name||'Untitled Build')}</h2><p>${esc(d.summary||'요약이 아직 없습니다.')}</p></div><div class="builder-review-grid-230"><div><small>Type memo</small><strong>${esc(d.projectType||'Not selected')}</strong></div><div><small>Target</small><strong>${esc(d.target||'Not selected')}</strong></div><div><small>Goal</small><strong>${esc(d.goal||'Not defined')}</strong></div><div><small>User</small><strong>${esc(d.audience||'Not defined')}</strong></div></div><div class="builder-review-note-230"><small>Reference & guardrails</small><p>${esc([d.reference,d.constraints,d.notes].filter(Boolean).join(' · ')||'아직 입력된 기준이 없습니다.')}</p></div><div class="builder-future-230"><strong>Next patches</strong><span>v2.3.1 Template & Feature Selection</span><span>v2.3.2 Platform · Auth · Data</span><span>v2.3.3 Standards & Knowledge</span></div></div>`;
+}
+function renderBuilderDrafts230(){
+  const list=(data.builderDrafts||[]).slice().sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  return `<div class="builder-home-230"><section class="builder-launch-230 panel"><div><span class="eyebrow">BUILDER FOUNDATION</span><h2>Design before development.</h2><p>운영 중인 Projects와 분리된 Draft에서 설계하고, 검증 후 프로젝트로 전환합니다.</p></div><button class="primary-btn" onclick="createBuilderDraft230()">새 설계 시작</button></section><div class="builder-tabs-230"><button class="active" onclick="setBuilderTab230('drafts')">Drafts <b>${list.length}</b></button><button onclick="setBuilderTab230('history')">Build History <b>${(data.builderRuns||[]).length}</b></button></div><section class="builder-draft-list-230 panel">${list.length?list.map(d=>`<article class="builder-draft-row-230"><button class="builder-draft-main-230" onclick="openBuilderDraft230('${d.id}')"><span class="builder-draft-icon-230">◇</span><span><strong>${esc(d.name)}</strong><small>${esc(d.summary||'설명 없음')} · Step ${Number(d.step||1)}/4</small></span></button><div class="builder-draft-progress-230"><i><b style="width:${builderCompletion230(d)}%"></b></i><small>${builderCompletion230(d)}%</small></div><time>${new Date(d.updatedAt).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</time><div class="builder-row-actions-230"><button title="복제" onclick="duplicateBuilderDraft230('${d.id}')">⧉</button><button class="danger" title="삭제" onclick="deleteBuilderDraft230('${d.id}')">×</button></div></article>`).join(''):`<div class="builder-empty-230"><strong>아직 Builder Draft가 없습니다.</strong><p>새 설계 시작을 눌러 독립된 Builder 작업공간을 만드세요.</p></div>`}</section></div>`;
+}
+function renderBuilderHistory230(){
+  const rows=data.builderRuns||[];return `<div class="builder-tabs-230"><button onclick="setBuilderTab230('drafts')">Drafts <b>${data.builderDrafts.length}</b></button><button class="active" onclick="setBuilderTab230('history')">Build History <b>${rows.length}</b></button></div><section class="panel builder-draft-list-230">${rows.length?rows.map(x=>`<article class="builder-draft-row-230"><span class="builder-draft-icon-230">✓</span><span><strong>${esc(x.name||'Build')}</strong><small>${esc(x.result||'Completed')}</small></span><time>${esc(x.date||'')}</time></article>`).join(''):'<div class="builder-empty-230"><strong>Build History는 아직 비어 있습니다.</strong><p>프로젝트 생성과 AI Report Export는 후속 패치에서 연결됩니다.</p></div>'}</section>`;
+}
+function renderBuilderEditor230(d){
+  const step=Number(data.builderState.step||1);const labels=['Basics','Direction','Guardrails','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 4</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 20%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===4?'disabled':''} onclick="builderStep230(${step+1})">${step===3?'검토':'다음'}</button></footer></section></div>`;
+}
+function renderBuilder230(){
+  $('#content').innerHTML=`<div class="page-title builder-page-title-230"><div><span class="eyebrow">PROJECT BUILDER</span><h1>Builder</h1><p>표준 템플릿과 규칙을 조립하는 Builder Engine의 독립 작업공간입니다.</p></div><div class="builder-patch-chip-230"><small>Implementation</small><strong>20%</strong><span>v2.3.0 Foundation</span></div></div><div id="builderView230"></div>`;
+  const view=$('#builderView230');const state=data.builderState||{};const d=builderDraft230(state.activeDraftId);
+  if(state.tab==='editor'&&d)view.innerHTML=renderBuilderEditor230(d);else if(state.tab==='history')view.innerHTML=renderBuilderHistory230();else view.innerHTML=renderBuilderDrafts230();
+}
+pages.builder=renderBuilder230;
+
+/* Final v2.3.0 navigation grouping. */
+buildNav=function(){
+  const c=counts();
+  const badge={tasks:c.tasks,memory:c.memory,projects:c.projects,builder:(data.builderDrafts||[]).length,brain:c.brain,assets:data.digitalAssets.length,experience:(data.experiences||[]).length,worklog:(data.workMode?.logs||[]).length};
+  const operations=['home','tasks','projects','builder','workspace','worklog'];
+  const production=['brain','assets','experience','knowledge'];
+  const control=['memory','roadmap','system'];
+  const row=n=>`<button class="nav-item ${n.id===current?'active':''}" data-page="${n.id}"><span class="ico">${n.ico}</span><span>${n.label}</span>${badge[n.id]?`<span class="badge">${badge[n.id]}</span>`:''}</button>`;
+  $('#nav').innerHTML=`<div class="nav-group"><div class="nav-label">OPERATIONS</div>${operations.map(id=>navItems.find(n=>n.id===id)).filter(Boolean).map(row).join('')}</div><div class="nav-group"><div class="nav-label">PRODUCTION</div>${production.map(id=>navItems.find(n=>n.id===id)).filter(Boolean).map(row).join('')}</div><div class="nav-group"><div class="nav-label">CONTROL</div>${control.map(id=>navItems.find(n=>n.id===id)).filter(Boolean).map(row).join('')}</div>`;
+  $$('.nav-item').forEach(b=>b.onclick=()=>go(b.dataset.page));
+};
+
+const renderRoadmapV230Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV230Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.0'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.0 · Builder Foundation — 현재 · 20%</strong><p>Builder 독립 페이지 · Draft CRUD · 4단계 이동 · 자동 저장 · Projects 데이터 분리</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV230Base=pages.system;pages.system=function(){renderSystemV230Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Foundation · Implementation 20%</p></div><div class="system-value-222"><strong>Studio OS v2.3.0</strong></div>';};
+document.title='Studio OS v2.3.0 · Builder Foundation';const brand230=document.querySelector('.brand small');if(brand230)brand230.textContent='Builder Foundation · v2.3.0';buildNav();
+
+/* =========================================================
+   Studio OS v2.3.1 · Builder Template & Feature Selection
+   Builder progress: 40%
+   - Project type templates
+   - Sub-template recommendation
+   - Screen and feature module selection
+   - Template defaults with editable selections
+   ========================================================= */
+const BUILDER_TYPES_231={
+  management:{label:'관리형 앱',desc:'업무·회원·점검·일정·데이터를 등록하고 운영하는 앱',templates:{
+    operations:{label:'업무 운영형',screens:['Dashboard','List','Detail','Create / Edit','History','Schedule','Reports','Settings'],features:['Search & Filter','CRUD','Status Workflow','Assignee','Attachments','Audit History','Import / Export','Notifications']},
+    member:{label:'회원 관리형',screens:['Dashboard','Members','Member Detail','Register / Edit','Groups','Activity History','Settings','Admin'],features:['Member Profile','Role Management','Search & Filter','Status Control','Bulk Actions','Notifications','Audit History','Export']},
+    inspection:{label:'점검·정비형',screens:['Dashboard','Asset List','Inspection Detail','Inspection Input','Maintenance','History','Schedule','Reports'],features:['Asset ID','Inspection Checklist','Photo Attachment','Maintenance History','Due Alerts','Search & Filter','Excel Import','PDF Report']},
+    data:{label:'데이터 관리형',screens:['Dashboard','Data List','Data Detail','Create / Edit','Import Center','History','Statistics','Settings'],features:['Search & Filter','CRUD','Bulk Import','Validation','Duplicate Check','Version History','Export','Backup / Restore']}
+  }},
+  search:{label:'검색·조회형 앱',desc:'검색과 상세 조회가 핵심인 카탈로그·가격·지식 앱',templates:{
+    catalog:{label:'카탈로그 검색형',screens:['Home Search','Search Results','Filter / Sort','Item Detail','Favorites','Recent Searches','Data Update','Settings'],features:['Instant Search','Partial Match','Category Filter','Sort','Favorites','Recent Queries','Source Display','Data Date']},
+    knowledge:{label:'지식·문서 조회형',screens:['Home Search','Results','Document Viewer','Categories','Bookmarks','Recent','Update History','Settings'],features:['Full-text Search','Tag Filter','Bookmarks','Recent Queries','Source Link','Version Display','Offline Cache','Export']},
+    price:{label:'가격·비교 조회형',screens:['Home Search','Results','Price Detail','Comparison','History','Favorites','Data Update','Settings'],features:['Specification Search','Price Summary','Min / Max / Average','Recent Price','Comparison','Source Display','Data Date','Excel Import']}
+  }},
+  community:{label:'커뮤니티형 앱',desc:'회원·게시물·댓글·알림과 운영정책이 필요한 앱',templates:{
+    club:{label:'동호회·소모임형',screens:['Feed','Board','Post Detail','Create Post','Members','Notifications','Profile','Admin'],features:['Email Login','Profile','Posts','Comments','Reactions','Media Upload','Notifications','Report / Block','Moderation']},
+    board:{label:'게시판 중심형',screens:['Board List','Post Detail','Create / Edit','Search','Notifications','My Activity','Profile','Admin'],features:['Posts','Comments','Search','Attachments','Bookmarks','Notifications','Report','Moderation','Account Deletion']}
+  }},
+  records:{label:'기록·통계형 앱',desc:'빠른 기록 입력과 기간별 통계·목표 관리 앱',templates:{
+    activity:{label:'활동·경기 기록형',screens:['Today','Record Input','History','Statistics','Comparison','Goals','Reports','Settings'],features:['Quick Entry','Edit / Delete','Daily / Monthly Filter','Average / Best','Trend Chart','Goals','Correction History','Export']},
+    habit:{label:'습관·성과 기록형',screens:['Today','Habit List','Check-in','Calendar','Statistics','Goals','Insights','Settings'],features:['Quick Check-in','Streak','Calendar','Goal Progress','Reminders','Statistics','Notes','Backup']}
+  }},
+  assets:{label:'자산관리형 앱',desc:'설비·문서·디지털 자산의 계층·이력·생애주기 관리',templates:{
+    equipment:{label:'설비·장비 관리형',screens:['Asset Dashboard','Asset Tree','Asset List','Asset Detail','Inspection','Maintenance','History','Reports'],features:['Unique Asset ID','Hierarchy','Location','Inspection','Maintenance','Failure History','Documents','Lifecycle Status','Audit Log']},
+    digital:{label:'디지털 자산 관리형',screens:['Asset Dashboard','Project Tree','Asset List','Asset Detail','Versions','Dependencies','Reuse','History'],features:['Asset Registry','Versioning','Project Link','Dependencies','Reuse Status','Quality State','Search & Filter','Impact Analysis']}
+  }},
+  finance:{label:'개인 재무형 앱',desc:'거래·예산·카드·자산·부채·목표를 관리하는 앱',templates:{
+    household:{label:'가계·예산 관리형',screens:['Financial Dashboard','Transactions','Budget','Accounts','Cards','Goals','Analysis','Settings'],features:['Income / Expense','Categories','Recurring Payments','Budget','Payer / Beneficiary','Monthly Analysis','Goals','Backup']},
+    assetFinance:{label:'자산·부채 관리형',screens:['Net Worth','Assets','Debts','Transactions','Goals','Forecast','Reports','Settings'],features:['Asset Register','Debt Register','Net Worth','Payment Schedule','Goal Tracking','Forecast','History','Secure Backup']}
+  }},
+  game:{label:'게임 앱',desc:'플레이·진행·저장·보상·수익화 구조를 가진 게임',templates:{
+    idle:{label:'방치형·클리커',screens:['Boot','Main Play','Upgrade','Store','Rewards','Achievements','Settings','Result'],features:['Resource Generation','Upgrade','Offline Reward','Prestige','Save / Load','Daily Reward','Ads / Purchase','Balance Data']},
+    puzzle:{label:'퍼즐·스테이지형',screens:['Boot','Stage Select','Gameplay','Pause','Result','Collection','Settings','Tutorial'],features:['Stage System','Rule Engine','Hint','Score / Stars','Level Unlock','Save / Load','Reward','Analytics']},
+    collection:{label:'수집·성장형',screens:['Home','Collection','Inventory','Team','Upgrade','Store','Missions','Settings'],features:['Collection','Rarity','Inventory','Upgrade','Team Formation','Rewards','Save / Load','Purchase']},
+    roblox:{label:'Roblox Experience',screens:['Lobby','Gameplay','Round Result','Inventory','Store','Profile','Leaderboard','Settings'],features:['Server State','Player Data','Round System','Rewards','Game Pass','Robux Purchase','Moderation','Analytics']}
+  }},
+  document:{label:'문서·디자인',desc:'보고서·프레젠테이션·디자인 산출물 제작 프로젝트',templates:{
+    report:{label:'보고서 제작형',screens:['Brief','Outline','Content','Design','Review','Export'],features:['A4 Layout','Editable Text','Version History','PDF Export','PNG Export','Source Assets']},
+    presentation:{label:'프레젠테이션형',screens:['Brief','Storyline','Slides','Design System','Review','Export'],features:['Design Layer','Text Layer','Speaker Notes','Asset Library','PPTX Export','PDF Export']}
+  }},
+  ai:{label:'AI 도구',desc:'프롬프트·지식·입출력 흐름을 갖는 AI 워크플로',templates:{
+    assistant:{label:'AI 업무 도우미',screens:['Home','Input','Result','History','Templates','Settings'],features:['Prompt Template','Context Input','Structured Output','History','Export','Error Handling']},
+    generator:{label:'콘텐츠 생성 도구',screens:['Brief','Options','Generate','Preview','History','Export'],features:['Preset','Prompt Builder','Generation Options','Preview','Version History','Export']}
+  }},
+  web:{label:'웹 앱',desc:'브라우저 기반 운영·대시보드·도구형 애플리케이션',templates:{
+    dashboard:{label:'대시보드형 웹 앱',screens:['Dashboard','List','Detail','Create / Edit','History','Settings'],features:['Responsive Layout','Search & Filter','CRUD','Local / Remote Data','Export','Error Handling']},
+    tool:{label:'단일 목적 도구형',screens:['Home','Input','Result','History','Settings'],features:['Fast Input','Validation','Result Preview','History','Export','Responsive Layout']}
+  }},
+  blank:{label:'빈 프로젝트',desc:'추천 없이 목적에 맞게 직접 구성',templates:{custom:{label:'직접 구성',screens:[],features:[]}}}
+};
+
+(function initV231(){
+  (data.builderDrafts||[]).forEach(d=>{
+    d.builderType=d.builderType||'';d.builderTemplate=d.builderTemplate||'';
+    d.selectedScreens=Array.isArray(d.selectedScreens)?d.selectedScreens:[];
+    d.selectedFeatures=Array.isArray(d.selectedFeatures)?d.selectedFeatures:[];
+  });
+  data.releaseNotes=data.releaseNotes||[];data.experiences=data.experiences||[];
+  if(!data.experiences.some(x=>x.id==='EXP-048'))data.experiences.unshift({
+    id:'EXP-048',title:'Template defaults must remain editable after recommendation',domain:'Builder',severity:'Medium',
+    issue:'템플릿을 선택한 뒤 추천 항목을 강제로 고정하면 프로젝트 고유 요구를 반영하기 어렵고 불필요한 기능이 누적됨',
+    cause:'추천과 필수 조건을 구분하지 않고 동일하게 처리함',
+    solution:'템플릿 선택 시 기본 화면과 기능을 추천값으로 채우되 사용자가 개별 항목을 추가·제거할 수 있도록 구현',
+    prevention:'Builder의 추천값은 editable defaults로 관리하고 강제 규칙은 Constitution 단계에서 별도 표시',
+    status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.3.1'
+  });
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.1'))data.releaseNotes.unshift({
+    id:'RN-2.3.1',version:'v2.3.1',date:'2026-08-06',title:'Builder Template & Feature Selection',
+    newItems:['프로젝트 유형 10종','유형별 세부 템플릿','기본 화면 선택','기능 모듈 선택'],
+    improved:['템플릿 추천값 자동 적용','추천 화면·기능 개별 편집','Review 선택 요약'],fixed:[],removed:[],experiences:['EXP-048']
+  });
+  saveData();
+})();
+
+function builderType231(d){return BUILDER_TYPES_231[d.builderType]||null;}
+function builderTemplate231(d){const t=builderType231(d);return t&&t.templates[d.builderTemplate]||null;}
+function chooseBuilderType231(key){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d||!BUILDER_TYPES_231[key])return;
+  d.builderType=key;d.builderTemplate='';d.selectedScreens=[];d.selectedFeatures=[];d.projectType=BUILDER_TYPES_231[key].label;d.updatedAt=builderNow230();saveData();renderBuilder230();
+}
+function chooseBuilderTemplate231(key){
+  const d=builderDraft230(data.builderState.activeDraftId);const type=builderType231(d);if(!d||!type||!type.templates[key])return;
+  const tpl=type.templates[key];d.builderTemplate=key;d.selectedScreens=[...tpl.screens];d.selectedFeatures=[...tpl.features];d.updatedAt=builderNow230();saveData();renderBuilder230();toast('템플릿 추천 구성을 적용했습니다.');
+}
+function toggleBuilderArray231(field,value){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const list=Array.isArray(d[field])?d[field]:[];
+  d[field]=list.includes(value)?list.filter(x=>x!==value):[...list,value];d.updatedAt=builderNow230();saveData();renderBuilder230();
+}
+function addBuilderCustom231(field){
+  const input=document.getElementById(field==='selectedScreens'?'builderCustomScreen231':'builderCustomFeature231');if(!input)return;const value=input.value.trim();if(!value)return;
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const list=Array.isArray(d[field])?d[field]:[];if(!list.includes(value))d[field]=[...list,value];d.updatedAt=builderNow230();saveData();renderBuilder230();
+}
+function builderTypeCards231(d){return `<div class="builder-type-grid-231">${Object.entries(BUILDER_TYPES_231).map(([key,x])=>`<button class="${d.builderType===key?'active':''}" onclick="chooseBuilderType231('${key}')"><strong>${esc(x.label)}</strong><small>${esc(x.desc)}</small></button>`).join('')}</div>`;}
+function builderTemplateCards231(d){const type=builderType231(d);if(!type)return '<div class="builder-empty-select-231">먼저 프로젝트 유형을 선택하세요.</div>';return `<div class="builder-template-grid-231">${Object.entries(type.templates).map(([key,x])=>`<button class="${d.builderTemplate===key?'active':''}" onclick="chooseBuilderTemplate231('${key}')"><strong>${esc(x.label)}</strong><small>화면 ${x.screens.length} · 기능 ${x.features.length}</small></button>`).join('')}</div>`;}
+function builderChecklist231(title,field,items,selected,inputId){return `<section class="builder-check-section-231"><div class="builder-check-head-231"><div><small>SELECTABLE MODULES</small><h3>${title}</h3></div><span>${selected.length} selected</span></div><div class="builder-check-grid-231">${items.map(x=>`<button class="${selected.includes(x)?'active':''}" onclick="toggleBuilderArray231('${field}','${String(x).replace(/'/g,"\\'")}')"><i>${selected.includes(x)?'✓':'+'}</i><span>${esc(x)}</span></button>`).join('')}</div><div class="builder-custom-add-231"><input id="${inputId}" placeholder="직접 항목 추가"><button onclick="addBuilderCustom231('${field}')">추가</button></div></section>`;}
+
+const builderCompletionV230Base=builderCompletion230;
+builderCompletion230=function(d){
+  const base=builderCompletionV230Base(d);const template=Boolean(d.builderType&&d.builderTemplate);const modules=Boolean((d.selectedScreens||[]).length&&(d.selectedFeatures||[]).length);
+  const checks=[base>=25,template,modules,d.step>=4];return Math.round(checks.filter(Boolean).length/4*100);
+};
+
+builderStepContent230=function(d,step){
+  if(step===1)return `<div class="builder-editor-grid-230">${builderField230('Build name','name',d.name,'프로젝트 또는 제품 이름')}${builderField230('One-line summary','summary',d.summary,'설계 의도를 한 줄로 정리')}</div><div class="builder-help-230"><strong>Foundation · Basics</strong><p>프로젝트 이름과 핵심 목적을 정의합니다. 입력값은 Draft에 자동 저장됩니다.</p></div>`;
+  if(step===2)return `<div class="builder-section-title-231"><span class="eyebrow">PROJECT TYPE</span><h3>무엇을 만들지 선택하세요.</h3><p>상용 앱에서 반복적으로 검증된 유형을 기준으로 세부 템플릿을 추천합니다.</p></div>${builderTypeCards231(d)}<div class="builder-section-title-231 second"><span class="eyebrow">BASE TEMPLATE</span><h3>기준 템플릿</h3></div>${builderTemplateCards231(d)}`;
+  if(step===3){const tpl=builderTemplate231(d);const screenPool=[...new Set([...(tpl?.screens||[]),...(d.selectedScreens||[])])];const featurePool=[...new Set([...(tpl?.features||[]),...(d.selectedFeatures||[])])];return `${builderChecklist231('기본 화면','selectedScreens',screenPool,d.selectedScreens||[],'builderCustomScreen231')}${builderChecklist231('기능 모듈','selectedFeatures',featurePool,d.selectedFeatures||[],'builderCustomFeature231')}<div class="builder-help-230"><strong>Editable defaults</strong><p>템플릿 추천값은 시작점이며 개별 화면과 기능을 자유롭게 추가하거나 제거할 수 있습니다. 필수 규칙은 v2.3.3 Constitution 단계에서 별도로 구분됩니다.</p></div>`;}
+  const type=builderType231(d),tpl=builderTemplate231(d);return `<div class="builder-review-230"><div class="builder-review-head-230"><span class="eyebrow">TEMPLATE REVIEW</span><h2>${esc(d.name||'Untitled Build')}</h2><p>${esc(d.summary||'요약이 아직 없습니다.')}</p></div><div class="builder-review-grid-230"><div><small>Project type</small><strong>${esc(type?.label||'Not selected')}</strong></div><div><small>Base template</small><strong>${esc(tpl?.label||'Not selected')}</strong></div><div><small>Screens</small><strong>${(d.selectedScreens||[]).length} selected</strong></div><div><small>Features</small><strong>${(d.selectedFeatures||[]).length} selected</strong></div></div><div class="builder-review-lists-231"><section><small>SCREEN STRUCTURE</small><div>${(d.selectedScreens||[]).map(x=>`<span>${esc(x)}</span>`).join('')||'<em>선택 없음</em>'}</div></section><section><small>FEATURE MODULES</small><div>${(d.selectedFeatures||[]).map(x=>`<span>${esc(x)}</span>`).join('')||'<em>선택 없음</em>'}</div></section></div><div class="builder-future-230"><strong>Next patches</strong><span>v2.3.2 Platform · Auth · Data</span><span>v2.3.3 Standards & Knowledge</span><span>v2.3.4 Assets & Dependencies</span></div></div>`;
+};
+
+renderBuilderEditor230=function(d){
+  const step=Number(data.builderState.step||1);const labels=['Basics','Template','Features','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 4</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 40%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===4?'disabled':''} onclick="builderStep230(${step+1})">${step===3?'검토':'다음'}</button></footer></section></div>`;
+};
+
+const renderBuilderV231Base=renderBuilder230;
+renderBuilder230=function(){
+  renderBuilderV231Base();const title=document.querySelector('.builder-page-title-230');if(title){const chip=title.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>40%</strong><span>v2.3.1 Template Engine</span>';}
+};
+pages.builder=renderBuilder230;
+
+const renderRoadmapV231Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV231Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.1'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.1 · Template & Feature Selection — 현재 · 40%</strong><p>프로젝트 유형 10종 · 세부 템플릿 · 기본 화면 · 기능 모듈 선택 · editable defaults</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV231Base=pages.system;pages.system=function(){renderSystemV231Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Template Engine · Implementation 40%</p></div><div class="system-value-222"><strong>Studio OS v2.3.1</strong></div>';};
+document.title='Studio OS v2.3.1 · Builder Template Engine';const brand231=document.querySelector('.brand small');if(brand231)brand231.textContent='Builder Template Engine · v2.3.1';buildNav();
+
+/* =========================================================
+   Studio OS v2.3.2 · Builder Platform, Auth & Data
+   Builder progress: 55%
+   ========================================================= */
+const BUILDER_PLATFORM_OPTIONS_232={
+  platforms:['Flutter Android','Flutter iOS','Flutter Android + iOS','Responsive Web','Desktop Web','Roblox','Unity','Document / Design'],
+  stacks:['Flutter + Dart','HTML + CSS + JavaScript','React / Next.js','Roblox Studio + Luau','Unity + C#','No-code / Document Engine'],
+  auth:['로그인 없음','로컬 PIN','이메일·비밀번호','사번·초기 비밀번호','Google / Apple 소셜 로그인','전화번호 로그인','혼합 로그인'],
+  membership:['개인 단독 사용','가족·소규모 그룹','폐쇄형 회원제','조직·부서 기반','공개 회원 서비스','게스트 + 회원'],
+  permissions:['권한 구분 없음','관리자 / 일반회원','역할 기반 권한(RBAC)','조직·부서별 권한','소유자 기반 권한','사용자 정의 권한'],
+  storage:['LocalStorage / IndexedDB','로컬 JSON / 파일','SQLite / Drift','Firebase Firestore','Supabase / PostgreSQL','REST API + Server DB','Cloud Save / Game DataStore'],
+  sync:['동기화 없음','수동 Export / Import','로그인 기반 클라우드 동기화','실시간 동기화','오프라인 우선 + 재연결 동기화'],
+  backup:['백업 없음','JSON 내보내기·불러오기','자동 로컬 백업','클라우드 자동 백업','관리자 전체 백업 + 복구'],
+  deployment:['로컬 프로토타입','내부 테스트','비공개 베타','공개 베타','상용 스토어 배포','웹 프로덕션 배포']
+};
+function defaultBuilderTechnical232(d){
+  const type=d.builderType||'';
+  if(type==='game')return {platform:'Flutter Android + iOS',stack:'Flutter + Dart',auth:'로그인 없음',membership:'개인 단독 사용',permission:'권한 구분 없음',storage:'SQLite / Drift',sync:'동기화 없음',backup:'JSON 내보내기·불러오기',deployment:'내부 테스트'};
+  if(type==='web'||type==='ai'||type==='document')return {platform:'Responsive Web',stack:'HTML + CSS + JavaScript',auth:'로그인 없음',membership:'개인 단독 사용',permission:'권한 구분 없음',storage:'LocalStorage / IndexedDB',sync:'수동 Export / Import',backup:'JSON 내보내기·불러오기',deployment:'웹 프로덕션 배포'};
+  if(type==='community')return {platform:'Flutter Android + iOS',stack:'Flutter + Dart',auth:'이메일·비밀번호',membership:'공개 회원 서비스',permission:'관리자 / 일반회원',storage:'Firebase Firestore',sync:'실시간 동기화',backup:'관리자 전체 백업 + 복구',deployment:'비공개 베타'};
+  return {platform:'Flutter Android',stack:'Flutter + Dart',auth:'로그인 없음',membership:'개인 단독 사용',permission:'권한 구분 없음',storage:'로컬 JSON / 파일',sync:'수동 Export / Import',backup:'JSON 내보내기·불러오기',deployment:'내부 테스트'};
+}
+(function initV232(){
+  (data.builderDrafts||[]).forEach(d=>{
+    const rec=defaultBuilderTechnical232(d);
+    d.platform=d.platform||'';d.techStack=d.techStack||'';d.authMode=d.authMode||'';d.membershipMode=d.membershipMode||'';
+    d.permissionMode=d.permissionMode||'';d.storageMode=d.storageMode||'';d.syncMode=d.syncMode||'';d.backupMode=d.backupMode||'';d.deploymentLevel=d.deploymentLevel||'';
+    d.technicalRecommendation=d.technicalRecommendation||rec;
+  });
+  data.experiences=data.experiences||[];data.releaseNotes=data.releaseNotes||[];
+  if(!data.experiences.some(x=>x.id==='EXP-049'))data.experiences.unshift({
+    id:'EXP-049',title:'Platform, authentication and storage decisions must be explicit before implementation',domain:'Builder',severity:'High',
+    issue:'기술·로그인·저장 방식을 개발 도중 즉흥적으로 변경하면 데이터 모델과 권한 구조가 중복되거나 마이그레이션 비용이 급증함',
+    cause:'프로젝트 생성 단계에서 운영 범위와 데이터 소유권을 확정하지 않음',
+    solution:'Builder에서 플랫폼·기술 스택·회원 모델·권한·저장·동기화·백업·배포 수준을 독립 단계로 확정',
+    prevention:'AI Report 생성 전 Technical & Operations 단계 완료를 필수 검토 항목으로 사용',status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.3.2'
+  });
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.2'))data.releaseNotes.unshift({
+    id:'RN-2.3.2',version:'v2.3.2',date:'2026-08-06',title:'Builder Platform, Auth & Data',
+    newItems:['플랫폼·기술 스택 선택','로그인·회원 모델','역할·권한','저장·동기화·백업','배포 수준'],
+    improved:['프로젝트 유형별 기술 구성 추천','Review 운영 구조 요약','Builder 5단계 흐름'],fixed:[],removed:[],experiences:['EXP-049']
+  });
+  saveData();
+})();
+function builderSelect232(label,field,value,options,help=''){
+  return `<label class="builder-select-field-232"><span>${esc(label)}</span><select onchange="updateBuilderTechnical232('${field}',this.value)"><option value="">선택하세요</option>${options.map(x=>`<option value="${esc(x)}" ${value===x?'selected':''}>${esc(x)}</option>`).join('')}</select>${help?`<small>${esc(help)}</small>`:''}</label>`;
+}
+function updateBuilderTechnical232(field,value){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;d[field]=value;d.updatedAt=builderNow230();saveData();
+  const pct=$('#builderDraftProgress230');if(pct)pct.textContent=`${builderCompletion230(d)}%`;
+  const save=$('#builderAutosave230');if(save){save.textContent='Saved';clearTimeout(window.builderSavedTimer232);window.builderSavedTimer232=setTimeout(()=>{if(save)save.textContent='Auto save';},1000);}
+}
+function applyBuilderTechnicalRecommendation232(){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const r=defaultBuilderTechnical232(d);
+  Object.assign(d,{platform:r.platform,techStack:r.stack,authMode:r.auth,membershipMode:r.membership,permissionMode:r.permission,storageMode:r.storage,syncMode:r.sync,backupMode:r.backup,deploymentLevel:r.deployment,technicalRecommendation:r,updatedAt:builderNow230()});
+  saveData();renderBuilder230();toast('프로젝트 유형에 맞는 권장 기술 구성을 적용했습니다.');
+}
+function builderTechnicalStep232(d){
+  const o=BUILDER_PLATFORM_OPTIONS_232;const recommended=defaultBuilderTechnical232(d);
+  return `<div class="builder-technical-head-232"><div><span class="eyebrow">TECHNICAL & OPERATIONS</span><h3>실행 환경과 운영 방식을 확정하세요.</h3><p>선택값은 이후 아키텍처·보안·배포 기준의 입력값이 됩니다.</p></div><button onclick="applyBuilderTechnicalRecommendation232()">권장 구성 적용</button></div>
+  <section class="builder-technical-section-232"><div class="builder-technical-title-232"><small>01 · PLATFORM</small><h3>플랫폼과 기술 스택</h3></div><div class="builder-technical-grid-232">${builderSelect232('Target platform','platform',d.platform,o.platforms,`추천: ${recommended.platform}`)}${builderSelect232('Technology stack','techStack',d.techStack,o.stacks,`추천: ${recommended.stack}`)}</div></section>
+  <section class="builder-technical-section-232"><div class="builder-technical-title-232"><small>02 · IDENTITY & ACCESS</small><h3>로그인·회원·권한</h3></div><div class="builder-technical-grid-232 three">${builderSelect232('Authentication','authMode',d.authMode,o.auth,`추천: ${recommended.auth}`)}${builderSelect232('Membership model','membershipMode',d.membershipMode,o.membership,`추천: ${recommended.membership}`)}${builderSelect232('Permission model','permissionMode',d.permissionMode,o.permissions,`추천: ${recommended.permission}`)}</div></section>
+  <section class="builder-technical-section-232"><div class="builder-technical-title-232"><small>03 · DATA & DELIVERY</small><h3>저장·동기화·백업·배포</h3></div><div class="builder-technical-grid-232 two">${builderSelect232('Data storage','storageMode',d.storageMode,o.storage,`추천: ${recommended.storage}`)}${builderSelect232('Synchronization','syncMode',d.syncMode,o.sync,`추천: ${recommended.sync}`)}${builderSelect232('Backup & restore','backupMode',d.backupMode,o.backup,`추천: ${recommended.backup}`)}${builderSelect232('Deployment level','deploymentLevel',d.deploymentLevel,o.deployment,`추천: ${recommended.deployment}`)}</div></section>`;
+}
+function builderReview232(d){
+  const type=builderType231(d),tpl=builderTemplate231(d);
+  const tech=[['Platform',d.platform],['Stack',d.techStack],['Auth',d.authMode],['Membership',d.membershipMode],['Permission',d.permissionMode],['Storage',d.storageMode],['Sync',d.syncMode],['Backup',d.backupMode],['Deployment',d.deploymentLevel]];
+  return `<div class="builder-review-230"><div class="builder-review-head-230"><span class="eyebrow">TECHNICAL REVIEW</span><h2>${esc(d.name||'Untitled Build')}</h2><p>${esc(d.summary||'요약이 아직 없습니다.')}</p></div><div class="builder-review-grid-230"><div><small>Project type</small><strong>${esc(type?.label||'Not selected')}</strong></div><div><small>Base template</small><strong>${esc(tpl?.label||'Not selected')}</strong></div><div><small>Screens</small><strong>${(d.selectedScreens||[]).length} selected</strong></div><div><small>Features</small><strong>${(d.selectedFeatures||[]).length} selected</strong></div></div><div class="builder-review-lists-231"><section><small>SCREEN STRUCTURE</small><div>${(d.selectedScreens||[]).map(x=>`<span>${esc(x)}</span>`).join('')||'<em>선택 없음</em>'}</div></section><section><small>FEATURE MODULES</small><div>${(d.selectedFeatures||[]).map(x=>`<span>${esc(x)}</span>`).join('')||'<em>선택 없음</em>'}</div></section></div><section class="builder-tech-review-232"><div class="builder-check-head-231"><div><small>TECHNICAL & OPERATIONS</small><h3>실행·회원·데이터 구성</h3></div><span>${tech.filter(x=>x[1]).length}/9 selected</span></div><div class="builder-tech-review-grid-232">${tech.map(([k,v])=>`<div><small>${esc(k)}</small><strong>${esc(v||'Not selected')}</strong></div>`).join('')}</div></section><div class="builder-future-230"><strong>Next patches</strong><span>v2.3.3 Standards & Knowledge</span><span>v2.3.4 Assets & Dependencies</span><span>v2.3.5 Experience Guardrails</span></div></div>`;
+}
+const builderCompletionV231Base=builderCompletion230;
+builderCompletion230=function(d){
+  const basics=Boolean(String(d.name||'').trim()&&String(d.summary||'').trim());
+  const template=Boolean(d.builderType&&d.builderTemplate);
+  const modules=Boolean((d.selectedScreens||[]).length&&(d.selectedFeatures||[]).length);
+  const technical=Boolean(d.platform&&d.techStack&&d.authMode&&d.membershipMode&&d.permissionMode&&d.storageMode&&d.syncMode&&d.backupMode&&d.deploymentLevel);
+  const review=Number(d.step||1)>=5;return Math.round([basics,template,modules,technical,review].filter(Boolean).length/5*100);
+};
+builderStep230=function(step){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;data.builderState.step=Math.max(1,Math.min(5,step));d.step=Math.max(Number(d.step||1),data.builderState.step);d.updatedAt=builderNow230();saveData();renderBuilder230();
+};
+builderStepContent230=function(d,step){
+  if(step===1)return `<div class="builder-editor-grid-230">${builderField230('Build name','name',d.name,'프로젝트 또는 제품 이름')}${builderField230('One-line summary','summary',d.summary,'설계 의도를 한 줄로 정리')}</div><div class="builder-help-230"><strong>Foundation · Basics</strong><p>프로젝트 이름과 핵심 목적을 정의합니다. 입력값은 Draft에 자동 저장됩니다.</p></div>`;
+  if(step===2)return `<div class="builder-section-title-231"><span class="eyebrow">PROJECT TYPE</span><h3>무엇을 만들지 선택하세요.</h3><p>상용 앱에서 반복적으로 검증된 유형을 기준으로 세부 템플릿을 추천합니다.</p></div>${builderTypeCards231(d)}<div class="builder-section-title-231 second"><span class="eyebrow">BASE TEMPLATE</span><h3>기준 템플릿</h3></div>${builderTemplateCards231(d)}`;
+  if(step===3){const tpl=builderTemplate231(d);const screenPool=[...new Set([...(tpl?.screens||[]),...(d.selectedScreens||[])])];const featurePool=[...new Set([...(tpl?.features||[]),...(d.selectedFeatures||[])])];return `${builderChecklist231('기본 화면','selectedScreens',screenPool,d.selectedScreens||[],'builderCustomScreen231')}${builderChecklist231('기능 모듈','selectedFeatures',featurePool,d.selectedFeatures||[],'builderCustomFeature231')}<div class="builder-help-230"><strong>Editable defaults</strong><p>템플릿 추천값은 시작점이며 개별 화면과 기능을 자유롭게 추가하거나 제거할 수 있습니다.</p></div>`;}
+  if(step===4)return builderTechnicalStep232(d);
+  return builderReview232(d);
+};
+renderBuilderEditor230=function(d){
+  const step=Math.max(1,Math.min(5,Number(data.builderState.step||1)));const labels=['Basics','Template','Features','Platform','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230 builder-steps-232">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 5</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 55%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===5?'disabled':''} onclick="builderStep230(${step+1})">${step===4?'검토':'다음'}</button></footer></section></div>`;
+};
+const renderBuilderV232Base=renderBuilder230;
+renderBuilder230=function(){
+  renderBuilderV232Base();const chip=document.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>55%</strong><span>v2.3.2 Platform · Auth · Data</span>';
+};
+pages.builder=renderBuilder230;
+const renderRoadmapV232Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV232Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.2'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.2 · Platform, Auth & Data — 현재 · 55%</strong><p>플랫폼 · 기술 스택 · 로그인 · 회원 · 권한 · 저장 · 동기화 · 백업 · 배포 수준</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV232Base=pages.system;pages.system=function(){renderSystemV232Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Platform, Auth & Data · Implementation 55%</p></div><div class="system-value-222"><strong>Studio OS v2.3.2</strong></div>';};
+document.title='Studio OS v2.3.2 · Builder Platform, Auth & Data';const brand232=document.querySelector('.brand small');if(brand232)brand232.textContent='Builder Platform · v2.3.2';buildNav();
+
+/* =========================================================
+   Studio OS v2.3.3 · Builder Standards & Knowledge
+   Builder progress: 70%
+   ========================================================= */
+const BUILDER_STANDARD_PACKS_233=[
+  {id:'std-common',label:'Common Core',group:'Foundation',desc:'버전 유지·명명·변경 이력·기존 기능 보호',types:['all'],required:true},
+  {id:'std-architecture',label:'Layer Architecture',group:'Architecture',desc:'Presentation · Domain · Data · Core 분리',types:['management','search','community','record','asset','finance','game','ai','web'],required:true},
+  {id:'std-single-renderer',label:'Single Renderer & State Rule',group:'Architecture',desc:'상태별 화면 복제 금지·단일 렌더러 사용',types:['all'],required:true},
+  {id:'std-flutter',label:'Flutter Application Standard',group:'Platform',desc:'Repository·상태관리·Navigation·오류 처리',types:['management','search','community','record','asset','finance','game']},
+  {id:'std-android-ui',label:'Android UI Baseline',group:'UI',desc:'Edge-to-edge·투명 Status Bar·단일 SafeArea',types:['management','search','community','record','asset','finance','game']},
+  {id:'std-auth',label:'Authentication & Membership Standard',group:'Security',desc:'로그인·탈퇴·세션·회원 상태 기준',types:['community','management','asset','finance']},
+  {id:'std-rbac',label:'Role & Permission Standard',group:'Security',desc:'UI와 데이터 저장소 모두에서 권한 검증',types:['community','management','asset']},
+  {id:'std-data',label:'Data Repository & Migration Standard',group:'Data',desc:'UI 직접 저장 금지·Repository·마이그레이션',types:['all'],required:true},
+  {id:'std-backup',label:'Backup & Restore Standard',group:'Operations',desc:'백업·복구·Export/Import 검증',types:['management','search','record','asset','finance','web']},
+  {id:'std-release',label:'Release & Maintenance Standard',group:'Operations',desc:'테스트·버전·배포·롤백·사후관리',types:['all'],required:true},
+  {id:'std-community',label:'Community Moderation Standard',group:'Operations',desc:'신고·차단·정지·관리자 감사 로그',types:['community']},
+  {id:'std-statistics',label:'Record & Statistics Standard',group:'Data',desc:'원본 기록과 집계 데이터 분리',types:['record','finance','game']},
+  {id:'std-asset',label:'Asset Lifecycle Standard',group:'Domain',desc:'고유 ID·현재 상태·이력·폐기 처리 분리',types:['asset']},
+  {id:'std-finance',label:'Personal Finance Integrity Standard',group:'Domain',desc:'거래 원본·결제자·수혜자·분석 데이터 분리',types:['finance']},
+  {id:'std-game',label:'Game Architecture & Save Standard',group:'Game',desc:'게임 상태·콘텐츠 데이터·저장·경제 시스템 분리',types:['game']},
+  {id:'std-doc',label:'Design Layer & Text Layer',group:'Document',desc:'디자인 자산과 편집 텍스트 분리',types:['document']},
+  {id:'std-ai',label:'AI Input / Output Contract',group:'AI',desc:'프롬프트·입력·출력·검증 스키마 명시',types:['ai']}
+];
+const BUILDER_KNOWLEDGE_PACKS_233=[
+  {id:'knw-app-types',label:'Industry App Type Standards',category:'Industry Standard',desc:'관리·검색·커뮤니티·기록·자산·재무·게임형 표준'},
+  {id:'knw-flutter-arch',label:'Flutter Layer Architecture',category:'Architecture',desc:'UI·Application·Domain·Data 책임 분리'},
+  {id:'knw-web-arch',label:'Web State & Storage Architecture',category:'Architecture',desc:'Renderer·State Store·Business Logic·Storage Adapter 분리'},
+  {id:'knw-auth',label:'Authentication & Account Lifecycle',category:'Feature Specification',desc:'가입·로그인·재설정·탈퇴·세션 관리'},
+  {id:'knw-permission',label:'Member, Role & Permission',category:'Feature Specification',desc:'사용자·역할·권한·조직·감사 로그'},
+  {id:'knw-search',label:'Search & Retrieval UX',category:'Feature Specification',desc:'검색 우선·필터·정렬·빈 결과·출처·기준일'},
+  {id:'knw-crud',label:'CRUD & Audit History',category:'Feature Specification',desc:'등록·수정·삭제·상태·변경 이력'},
+  {id:'knw-data',label:'Repository, Backup & Migration',category:'Data',desc:'저장 추상화·백업·복구·스키마 마이그레이션'},
+  {id:'knw-release',label:'Release, Monitoring & Rollback',category:'Operations',desc:'내부 테스트·베타·프로덕션·오류·롤백'},
+  {id:'knw-game',label:'Game Loop, Economy & Save',category:'Game',desc:'루프·진행·보상·경제·저장·밸런스'},
+  {id:'knw-builder-schema',label:'Builder & AI Report Schema',category:'Builder Schema',desc:'Builder Draft·AI Report·Return Patch 데이터 계약'}
+];
+function builderPackApplies233(pack,d){return pack.types?.includes('all')||pack.types?.includes(d.builderType||'');}
+function defaultBuilderStandards233(d){return BUILDER_STANDARD_PACKS_233.filter(p=>p.required||builderPackApplies233(p,d)).map(p=>p.id);}
+function defaultBuilderKnowledge233(d){
+  const base=['knw-app-types','knw-data','knw-release','knw-builder-schema'];
+  const type=d.builderType;
+  if(d.techStack==='Flutter + Dart'||String(d.platform||'').startsWith('Flutter'))base.push('knw-flutter-arch'); else base.push('knw-web-arch');
+  if(d.authMode&&d.authMode!=='로그인 없음')base.push('knw-auth');
+  if(d.permissionMode&&d.permissionMode!=='권한 구분 없음')base.push('knw-permission');
+  if((d.selectedFeatures||[]).some(x=>/Search|검색|Filter/i.test(x)))base.push('knw-search');
+  if((d.selectedFeatures||[]).some(x=>/CRUD|등록|수정|History|이력/i.test(x)))base.push('knw-crud');
+  if(type==='game')base.push('knw-game');
+  return [...new Set(base)];
+}
+(function initV233(){
+  (data.builderDrafts||[]).forEach(d=>{
+    d.selectedStandards=Array.isArray(d.selectedStandards)?d.selectedStandards:[];
+    d.selectedKnowledge=Array.isArray(d.selectedKnowledge)?d.selectedKnowledge:[];
+    d.standardsInitialized=Boolean(d.standardsInitialized);
+  });
+  data.knowledge=data.knowledge||[];data.experiences=data.experiences||[];data.releaseNotes=data.releaseNotes||[];
+  const knowledgeSeeds=BUILDER_KNOWLEDGE_PACKS_233.map((k,i)=>({id:`KNW-BLD-${String(i+1).padStart(3,'0')}`,title:k.label,type:k.category,status:'Active',version:'v1.0',summary:k.desc,tags:['Builder','App Development Standard'],builderPackId:k.id}));
+  knowledgeSeeds.forEach(k=>{if(!data.knowledge.some(x=>x.builderPackId===k.builderPackId||x.id===k.id))data.knowledge.push(k);});
+  if(!data.experiences.some(x=>x.id==='EXP-050'))data.experiences.unshift({
+    id:'EXP-050',title:'Builder standards must be data-driven and selected before implementation',domain:'Builder',severity:'Critical',
+    issue:'프로젝트별 규칙이 대화와 코드에 흩어지면 삭제 기능 잔존·상태별 렌더러 중복·권한 누락이 반복됨',
+    cause:'표준·아키텍처·운영 지침이 프로젝트 생성 과정과 연결되지 않음',
+    solution:'Builder Standards 단계에서 Industry·Studio·Platform 표준과 Knowledge Pack을 명시적으로 선택하고 Review에 고정',
+    prevention:'AI Report 생성 전에 필수 표준과 Knowledge Pack 누락을 검사',status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.3.3'
+  });
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.3'))data.releaseNotes.unshift({
+    id:'RN-2.3.3',version:'v2.3.3',date:'2026-08-06',title:'Builder Standards & Knowledge',
+    newItems:['Standards 독립 단계','Industry·Studio·Platform 규칙 팩','Knowledge Pack 선택','프로젝트 유형별 자동 추천','Review 표준 연결 요약'],
+    improved:['Knowledge를 Builder 입력 데이터로 연결','필수 규칙 잠금','Builder 6단계 흐름'],fixed:[],removed:[],experiences:['EXP-050']
+  });
+  saveData();
+})();
+function initializeBuilderStandards233(d,force=false){
+  if(!force&&d.standardsInitialized)return;
+  d.selectedStandards=defaultBuilderStandards233(d);
+  d.selectedKnowledge=defaultBuilderKnowledge233(d);
+  d.standardsInitialized=true;d.updatedAt=builderNow230();saveData();
+}
+function applyBuilderStandardsRecommendation233(){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;initializeBuilderStandards233(d,true);renderBuilder230();toast('프로젝트 구성에 맞는 Standards & Knowledge를 적용했습니다.');}
+function toggleBuilderStandard233(id){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const pack=BUILDER_STANDARD_PACKS_233.find(x=>x.id===id);if(pack?.required)return toast('필수 Standard는 해제할 수 없습니다.');
+  const set=new Set(d.selectedStandards||[]);set.has(id)?set.delete(id):set.add(id);d.selectedStandards=[...set];d.updatedAt=builderNow230();saveData();renderBuilder230();
+}
+function toggleBuilderKnowledge233(id){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const set=new Set(d.selectedKnowledge||[]);set.has(id)?set.delete(id):set.add(id);d.selectedKnowledge=[...set];d.updatedAt=builderNow230();saveData();renderBuilder230();}
+function builderStandardsStep233(d){
+  initializeBuilderStandards233(d);
+  const applicable=BUILDER_STANDARD_PACKS_233.filter(p=>p.required||builderPackApplies233(p,d));
+  const groups=[...new Set(applicable.map(x=>x.group))];
+  return `<div class="builder-technical-head-232 builder-standards-head-233"><div><span class="eyebrow">STANDARDS & KNOWLEDGE</span><h3>개발 기준과 참조 지식을 확정하세요.</h3><p>필수 규칙은 잠기며, 프로젝트 유형·플랫폼·기능에 따라 권장 Pack이 자동 구성됩니다.</p></div><button onclick="applyBuilderStandardsRecommendation233()">권장 기준 다시 적용</button></div>
+  <section class="builder-standards-section-233"><div class="builder-check-head-231"><div><small>01 · STANDARDS</small><h3>Industry · Studio · Platform Standards</h3></div><span>${(d.selectedStandards||[]).length} selected</span></div>${groups.map(g=>`<div class="builder-standard-group-233"><h4>${esc(g)}</h4><div class="builder-standard-grid-233">${applicable.filter(x=>x.group===g).map(p=>`<button class="builder-standard-card-233 ${(d.selectedStandards||[]).includes(p.id)?'selected':''} ${p.required?'required':''}" onclick="toggleBuilderStandard233('${p.id}')"><i>${(d.selectedStandards||[]).includes(p.id)?'✓':'+'}</i><span><strong>${esc(p.label)}</strong><small>${esc(p.desc)}</small></span>${p.required?'<em>Required</em>':''}</button>`).join('')}</div></div>`).join('')}</section>
+  <section class="builder-standards-section-233"><div class="builder-check-head-231"><div><small>02 · KNOWLEDGE PACKS</small><h3>Builder가 AI Report에 연결할 기준 문서</h3></div><span>${(d.selectedKnowledge||[]).length} selected</span></div><div class="builder-knowledge-grid-233">${BUILDER_KNOWLEDGE_PACKS_233.map(k=>`<button class="builder-knowledge-card-233 ${(d.selectedKnowledge||[]).includes(k.id)?'selected':''}" onclick="toggleBuilderKnowledge233('${k.id}')"><span>${esc(k.category)}</span><strong>${esc(k.label)}</strong><small>${esc(k.desc)}</small><i>${(d.selectedKnowledge||[]).includes(k.id)?'Selected':'Add'}</i></button>`).join('')}</div></section>`;
+}
+function builderReview233(d){
+  const type=builderType231(d),tpl=builderTemplate231(d);const standards=(d.selectedStandards||[]).map(id=>BUILDER_STANDARD_PACKS_233.find(x=>x.id===id)).filter(Boolean);const knowledge=(d.selectedKnowledge||[]).map(id=>BUILDER_KNOWLEDGE_PACKS_233.find(x=>x.id===id)).filter(Boolean);
+  const tech=[['Platform',d.platform],['Stack',d.techStack],['Auth',d.authMode],['Membership',d.membershipMode],['Permission',d.permissionMode],['Storage',d.storageMode],['Sync',d.syncMode],['Backup',d.backupMode],['Deployment',d.deploymentLevel]];
+  return `<div class="builder-review-230"><div class="builder-review-head-230"><span class="eyebrow">STANDARDS REVIEW</span><h2>${esc(d.name||'Untitled Build')}</h2><p>${esc(d.summary||'요약이 아직 없습니다.')}</p></div><div class="builder-review-grid-230"><div><small>Project type</small><strong>${esc(type?.label||'Not selected')}</strong></div><div><small>Base template</small><strong>${esc(tpl?.label||'Not selected')}</strong></div><div><small>Screens / Features</small><strong>${(d.selectedScreens||[]).length} / ${(d.selectedFeatures||[]).length}</strong></div><div><small>Standards / Knowledge</small><strong>${standards.length} / ${knowledge.length}</strong></div></div>
+  <section class="builder-tech-review-232"><div class="builder-check-head-231"><div><small>TECHNICAL & OPERATIONS</small><h3>실행·회원·데이터 구성</h3></div><span>${tech.filter(x=>x[1]).length}/9 selected</span></div><div class="builder-tech-review-grid-232">${tech.map(([k,v])=>`<div><small>${esc(k)}</small><strong>${esc(v||'Not selected')}</strong></div>`).join('')}</div></section>
+  <div class="builder-review-lists-231 builder-review-standards-233"><section><small>APPLIED STANDARDS</small><div>${standards.map(x=>`<span title="${esc(x.desc)}">${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}</div></section><section><small>KNOWLEDGE PACKS</small><div>${knowledge.map(x=>`<span title="${esc(x.desc)}">${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}</div></section></div>
+  <section class="builder-ai-preview-233"><div><span class="eyebrow">AI DEVELOPMENT PACKAGE · PREVIEW</span><h3>기준 연결 준비 완료</h3><p>선택한 Template·Technical·Standards·Knowledge는 후속 Export 패치에서 하나의 제작 기준서로 변환됩니다.</p></div><strong>${standards.length+knowledge.length}<small>linked rules</small></strong></section>
+  <div class="builder-future-230"><strong>Next patches</strong><span>v2.3.4 Assets & Dependencies</span><span>v2.3.5 Experience Guardrails</span><span>v2.3.6 AI Development Package</span></div></div>`;
+}
+const builderCompletionV232Base233=builderCompletion230;
+builderCompletion230=function(d){
+  const basics=Boolean(String(d.name||'').trim()&&String(d.summary||'').trim());const template=Boolean(d.builderType&&d.builderTemplate);const modules=Boolean((d.selectedScreens||[]).length&&(d.selectedFeatures||[]).length);const technical=Boolean(d.platform&&d.techStack&&d.authMode&&d.membershipMode&&d.permissionMode&&d.storageMode&&d.syncMode&&d.backupMode&&d.deploymentLevel);const standards=Boolean((d.selectedStandards||[]).length&&(d.selectedKnowledge||[]).length);const review=Number(d.step||1)>=6;return Math.round([basics,template,modules,technical,standards,review].filter(Boolean).length/6*100);
+};
+builderStep230=function(step){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;data.builderState.step=Math.max(1,Math.min(6,step));d.step=Math.max(Number(d.step||1),data.builderState.step);d.updatedAt=builderNow230();saveData();renderBuilder230();};
+builderStepContent230=function(d,step){
+  if(step===1)return `<div class="builder-editor-grid-230">${builderField230('Build name','name',d.name,'프로젝트 또는 제품 이름')}${builderField230('One-line summary','summary',d.summary,'설계 의도를 한 줄로 정리')}</div><div class="builder-help-230"><strong>Foundation · Basics</strong><p>프로젝트 이름과 핵심 목적을 정의합니다. 입력값은 Draft에 자동 저장됩니다.</p></div>`;
+  if(step===2)return `<div class="builder-section-title-231"><span class="eyebrow">PROJECT TYPE</span><h3>무엇을 만들지 선택하세요.</h3><p>상용 앱에서 반복적으로 검증된 유형을 기준으로 세부 템플릿을 추천합니다.</p></div>${builderTypeCards231(d)}<div class="builder-section-title-231 second"><span class="eyebrow">BASE TEMPLATE</span><h3>기준 템플릿</h3></div>${builderTemplateCards231(d)}`;
+  if(step===3){const tpl=builderTemplate231(d);const screenPool=[...new Set([...(tpl?.screens||[]),...(d.selectedScreens||[])])];const featurePool=[...new Set([...(tpl?.features||[]),...(d.selectedFeatures||[])])];return `${builderChecklist231('기본 화면','selectedScreens',screenPool,d.selectedScreens||[],'builderCustomScreen231')}${builderChecklist231('기능 모듈','selectedFeatures',featurePool,d.selectedFeatures||[],'builderCustomFeature231')}<div class="builder-help-230"><strong>Editable defaults</strong><p>템플릿 추천값은 시작점이며 개별 화면과 기능을 자유롭게 추가하거나 제거할 수 있습니다.</p></div>`;}
+  if(step===4)return builderTechnicalStep232(d);
+  if(step===5)return builderStandardsStep233(d);
+  return builderReview233(d);
+};
+renderBuilderEditor230=function(d){
+  const step=Math.max(1,Math.min(6,Number(data.builderState.step||1)));const labels=['Basics','Template','Features','Platform','Standards','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230 builder-steps-232 builder-steps-233">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 6</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 70%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===6?'disabled':''} onclick="builderStep230(${step+1})">${step===5?'검토':'다음'}</button></footer></section></div>`;
+};
+const renderBuilderV233Base=renderBuilder230;
+renderBuilder230=function(){renderBuilderV233Base();const chip=document.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>70%</strong><span>v2.3.3 Standards & Knowledge</span>';};
+pages.builder=renderBuilder230;
+const renderRoadmapV233Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV233Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.3'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.3 · Standards & Knowledge — 현재 · 70%</strong><p>Industry·Studio·Platform Standards · Knowledge Pack · 필수 규칙 잠금 · AI Package Preview</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV233Base=pages.system;pages.system=function(){renderSystemV233Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Standards & Knowledge · Implementation 70%</p></div><div class="system-value-222"><strong>Studio OS v2.3.3</strong></div>';};
+document.title='Studio OS v2.3.3 · Builder Standards & Knowledge';const brand233=document.querySelector('.brand small');if(brand233)brand233.textContent='Builder Standards · v2.3.3';buildNav();
+
+/* =========================================================
+   Studio OS v2.3.4 · Builder Assets & Dependencies
+   Builder progress: 80%
+   ========================================================= */
+const BUILDER_ASSET_CATALOG_234=[
+  {id:'AST-APP-SHELL',label:'App Shell & Navigation',type:'Starter Project',types:['management','search','community','record','asset','finance','ai','web'],platforms:['Flutter Android','Flutter iOS','Flutter Android + iOS','Responsive Web','Desktop Web'],desc:'공통 앱 프레임, 라우팅, 테마와 기본 상태 구조'},
+  {id:'AST-DASHBOARD',label:'Dashboard Pattern',type:'UI Pattern',types:['management','record','asset','finance'],desc:'요약 지표·빠른 작업·최근 기록 대시보드'},
+  {id:'AST-SEARCH',label:'Search-first Module',type:'Feature Module',types:['management','search','community','asset','finance'],features:['검색','Search','필터','Filter'],desc:'검색·필터·정렬·최근 검색 흐름'},
+  {id:'AST-CRUD',label:'CRUD & Form Module',type:'Feature Module',types:['management','community','record','asset','finance'],desc:'목록·상세·등록·수정·삭제 확인 흐름'},
+  {id:'AST-HISTORY',label:'History & Audit Module',type:'Feature Module',types:['management','record','asset','finance'],features:['이력','History','감사 로그','Audit Log'],desc:'변경 이력, 상태 이력, 감사 로그'},
+  {id:'AST-AUTH',label:'Authentication & Member Module',type:'Feature Module',types:['management','community','asset','finance','ai','web'],auth:true,desc:'로그인·프로필·세션·계정 관리'},
+  {id:'AST-RBAC',label:'Role & Permission Module',type:'Feature Module',types:['management','community','asset','finance'],permission:true,desc:'관리자·회원·역할 기반 권한 구조'},
+  {id:'AST-IMPORT',label:'Excel / JSON Import Engine',type:'Integration',types:['management','search','record','asset','finance'],features:['Excel','Import','업로드'],desc:'파일 선택·검증·중복 검사·가져오기'},
+  {id:'AST-PDF',label:'PDF Report Module',type:'Feature Module',types:['management','record','asset','finance','document'],features:['PDF','Report','보고서'],desc:'보고서 생성·미리보기·출력'},
+  {id:'AST-CHART',label:'Statistics & Chart Module',type:'Feature Module',types:['record','asset','finance','management'],features:['통계','Statistics','차트','Chart'],desc:'집계 서비스와 차트 UI'},
+  {id:'AST-FILE',label:'File & Media Attachment',type:'Feature Module',types:['management','community','asset'],features:['사진','파일','Attachment','Media'],desc:'사진·문서·미디어 첨부와 저장'},
+  {id:'AST-NOTIFY',label:'Notification Module',type:'Feature Module',types:['management','community','record','asset','finance','game'],features:['알림','Notification'],desc:'로컬·푸시 알림과 읽음 상태'},
+  {id:'AST-GAME-CORE',label:'Game Core Loop',type:'Starter Project',types:['game'],desc:'부팅·메인 메뉴·플레이·결과·저장 기본 루프'},
+  {id:'AST-GAME-SAVE',label:'Game Save & Progression',type:'Feature Module',types:['game'],desc:'플레이어 데이터·진행도·오프라인 저장'},
+  {id:'AST-GAME-ECONOMY',label:'Game Economy & Reward',type:'Feature Module',types:['game'],desc:'재화·보상·업그레이드·밸런스 데이터'},
+  {id:'AST-GAME-MEDIA',label:'Game Audio & Visual Assets',type:'Design System',types:['game'],desc:'Sprite·Character·BGM·SFX 자산 슬롯'},
+  {id:'AST-DOC-ENGINE',label:'Design Engine Document Base',type:'Starter Project',types:['document'],desc:'디자인 레이어·텍스트 레이어·PNG/PDF 출력 구조'},
+  {id:'AST-AI-WORKSPACE',label:'AI Workspace Module',type:'Feature Module',types:['ai'],desc:'프롬프트 입력·결과·세션·히스토리 구조'},
+  {id:'AST-BACKUP',label:'Backup & Restore Module',type:'Feature Module',types:['management','search','community','record','asset','finance','ai','web'],backup:true,desc:'Export·Import·복구 검증 흐름'},
+  {id:'AST-ERROR',label:'Error & Logging Module',type:'Core Module',types:['management','search','community','record','asset','finance','game','ai','web','document'],desc:'오류 분류·사용자 메시지·운영 로그'}
+];
+const BUILDER_DEPENDENCY_CATALOG_234={
+  'Flutter + Dart':['flutter','go_router','provider / riverpod'],
+  'HTML + CSS + JavaScript':['vanilla-js','browser-storage'],
+  'React / Next.js':['react','next','state-store'],
+  'Roblox Studio + Luau':['roblox-datastore','luau-modules'],
+  'Unity + C#':['unity-input-system','scriptable-objects'],
+  'No-code / Document Engine':['html2canvas','print-css'],
+  'Firebase Firestore':['firebase_core','firebase_auth','cloud_firestore'],
+  'Supabase / PostgreSQL':['supabase-client','postgres-schema'],
+  'SQLite / Drift':['drift','sqlite3_flutter_libs','path_provider'],
+  'LocalStorage / IndexedDB':['localStorage','indexedDB'],
+  '로컬 JSON / 파일':['dart:convert','path_provider','file_picker'],
+  'REST API + Server DB':['http-client','json-mapper','api-error-handler'],
+  'Cloud Save / Game DataStore':['cloud-save','player-data-schema'],
+  'AST-AUTH':['auth-state','session-manager','account-recovery'],
+  'AST-RBAC':['role-model','permission-guard','audit-log'],
+  'AST-IMPORT':['file_picker','excel-parser','schema-validator'],
+  'AST-PDF':['pdf-generator','printing','report-template'],
+  'AST-CHART':['aggregation-service','chart-library'],
+  'AST-FILE':['file-picker','media-storage','upload-validator'],
+  'AST-NOTIFY':['notification-service','permission-handler'],
+  'AST-GAME-SAVE':['save-adapter','migration-version','offline-progress'],
+  'AST-GAME-ECONOMY':['economy-config','reward-engine','balance-table'],
+  'AST-BACKUP':['backup-schema','import-validator','restore-rollback'],
+  'AST-ERROR':['error-boundary','structured-logger']
+};
+function builderRecommendedAssets234(d){
+  const features=(d.selectedFeatures||[]).map(String);const type=d.builderType||'';
+  return BUILDER_ASSET_CATALOG_234.filter(a=>{
+    if(!(a.types||[]).includes(type))return false;
+    if(a.auth&&(!d.authMode||d.authMode==='로그인 없음'))return false;
+    if(a.permission&&(!d.permissionMode||d.permissionMode==='권한 구분 없음'))return false;
+    if(a.backup&&(!d.backupMode||d.backupMode==='백업 없음'))return false;
+    if(a.features&&a.features.length&&!a.features.some(k=>features.some(f=>f.toLowerCase().includes(k.toLowerCase()))))return false;
+    return true;
+  }).map(x=>x.id);
+}
+function initializeBuilderAssets234(d,force=false){
+  if(!Array.isArray(d.selectedAssets)||force)d.selectedAssets=builderRecommendedAssets234(d);
+  d.customAssets=Array.isArray(d.customAssets)?d.customAssets:[];
+  d.assetSelectionMode=d.assetSelectionMode||'recommended';
+  d.assetInitialized234=true;
+  d.dependencies=builderDependencies234(d);
+}
+function builderDependencies234(d){
+  const deps=new Set();
+  [d.techStack,d.storageMode].filter(Boolean).forEach(k=>(BUILDER_DEPENDENCY_CATALOG_234[k]||[]).forEach(x=>deps.add(x)));
+  (d.selectedAssets||[]).forEach(id=>(BUILDER_DEPENDENCY_CATALOG_234[id]||[]).forEach(x=>deps.add(x)));
+  if(d.syncMode&&d.syncMode!=='동기화 없음')deps.add('sync-conflict-policy');
+  if(d.deploymentLevel&&d.deploymentLevel.includes('상용')){deps.add('release-signing');deps.add('production-monitoring');}
+  return [...deps];
+}
+function applyBuilderAssetRecommendation234(){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;initializeBuilderAssets234(d,true);d.updatedAt=builderNow230();saveData();renderBuilder230();toast('템플릿과 기능에 맞는 Asset 추천을 다시 적용했습니다.');}
+function toggleBuilderAsset234(id){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;initializeBuilderAssets234(d);const set=new Set(d.selectedAssets||[]);set.has(id)?set.delete(id):set.add(id);d.selectedAssets=[...set];d.assetSelectionMode='customized';d.dependencies=builderDependencies234(d);d.updatedAt=builderNow230();saveData();renderBuilder230();}
+function addBuilderCustomAsset234(){const d=builderDraft230(data.builderState.activeDraftId);const input=$('#builderCustomAsset234');if(!d||!input)return;const value=input.value.trim();if(!value)return;if(!(d.customAssets||[]).includes(value))d.customAssets.push(value);d.updatedAt=builderNow230();saveData();renderBuilder230();}
+function removeBuilderCustomAsset234(name){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;d.customAssets=(d.customAssets||[]).filter(x=>x!==name);d.updatedAt=builderNow230();saveData();renderBuilder230();}
+function builderFolderPreview234(d){
+  const stack=d.techStack||'';const hasGame=d.builderType==='game';const hasDoc=d.builderType==='document';
+  if(hasGame)return ['game/','  core/','  systems/','  scenes/','  data/','  ui/','assets/','  audio/','  sprites/','docs/'];
+  if(hasDoc)return ['design/','text/','assets/','data/','exports/','index.html'];
+  if(stack.includes('HTML')||stack.includes('React'))return ['src/','  core/','  data/','  domain/','  pages/','  components/','  services/','assets/','docs/'];
+  return ['lib/','  core/','  data/','  domain/','  presentation/','  services/','  models/','  routes/','assets/','test/','docs/'];
+}
+function builderAssetsStep234(d){
+  initializeBuilderAssets234(d);const selected=new Set(d.selectedAssets||[]);const recommended=new Set(builderRecommendedAssets234(d));const applicable=BUILDER_ASSET_CATALOG_234.filter(a=>(a.types||[]).includes(d.builderType||''));
+  const groups=[...new Set(applicable.map(a=>a.type))];const deps=builderDependencies234(d);d.dependencies=deps;
+  return `<div class="builder-assets-head-234"><div><span class="eyebrow">ASSETS & DEPENDENCIES</span><h3>재사용 부품과 구현 의존성을 확정하세요.</h3><p>선택한 유형·기능·기술 구성을 기준으로 Asset 후보와 개발 의존성을 자동 계산합니다.</p></div><button onclick="applyBuilderAssetRecommendation234()">추천 다시 적용</button></div>
+  <section class="builder-assets-section-234"><div class="builder-check-head-231"><div><small>01 · REUSABLE ASSETS</small><h3>Template · Module · Pattern</h3></div><span>${selected.size} selected</span></div>${groups.map(g=>`<div class="builder-asset-group-234"><h4>${esc(g)}</h4><div class="builder-asset-grid-234">${applicable.filter(x=>x.type===g).map(a=>`<button class="builder-asset-card-234 ${selected.has(a.id)?'selected':''}" onclick="toggleBuilderAsset234('${a.id}')"><i>${selected.has(a.id)?'✓':'+'}</i><span><strong>${esc(a.label)}</strong><small>${esc(a.desc)}</small></span>${recommended.has(a.id)?'<em>Recommended</em>':''}</button>`).join('')}</div></div>`).join('')}
+  <div class="builder-custom-asset-234"><input id="builderCustomAsset234" placeholder="사용자 정의 Asset 이름"><button onclick="addBuilderCustomAsset234()">추가</button></div>${(d.customAssets||[]).length?`<div class="builder-custom-tags-234">${d.customAssets.map(x=>`<span>${esc(x)}<button onclick="removeBuilderCustomAsset234('${esc(x)}')">×</button></span>`).join('')}</div>`:''}</section>
+  <div class="builder-asset-lower-234"><section class="builder-assets-section-234"><div class="builder-check-head-231"><div><small>02 · DEPENDENCIES</small><h3>자동 계산된 구현 요소</h3></div><span>${deps.length} linked</span></div><div class="builder-dependency-list-234">${deps.map((x,i)=>`<div><b>${String(i+1).padStart(2,'0')}</b><span>${esc(x)}</span></div>`).join('')||'<p>기술 스택과 Asset을 선택하면 의존성이 표시됩니다.</p>'}</div></section>
+  <section class="builder-assets-section-234"><div class="builder-check-head-231"><div><small>03 · FOLDER PREVIEW</small><h3>권장 프로젝트 골격</h3></div><span>Preview</span></div><pre class="builder-folder-preview-234">${esc(builderFolderPreview234(d).join('\n'))}</pre></section></div>`;
+}
+function builderReview234(d){
+  initializeBuilderAssets234(d);const type=builderType231(d),tpl=builderTemplate231(d);const standards=(d.selectedStandards||[]).map(id=>BUILDER_STANDARD_PACKS_233.find(x=>x.id===id)).filter(Boolean);const knowledge=(d.selectedKnowledge||[]).map(id=>BUILDER_KNOWLEDGE_PACKS_233.find(x=>x.id===id)).filter(Boolean);const assets=(d.selectedAssets||[]).map(id=>BUILDER_ASSET_CATALOG_234.find(x=>x.id===id)).filter(Boolean);const deps=builderDependencies234(d);
+  return `<div class="builder-review-230"><div class="builder-review-head-230"><span class="eyebrow">ASSET & DEPENDENCY REVIEW</span><h2>${esc(d.name||'Untitled Build')}</h2><p>${esc(d.summary||'요약이 아직 없습니다.')}</p></div><div class="builder-review-grid-230"><div><small>Project type</small><strong>${esc(type?.label||'Not selected')}</strong></div><div><small>Base template</small><strong>${esc(tpl?.label||'Not selected')}</strong></div><div><small>Assets</small><strong>${assets.length+(d.customAssets||[]).length}</strong></div><div><small>Dependencies</small><strong>${deps.length}</strong></div></div>
+  <div class="builder-review-lists-231 builder-review-standards-233"><section><small>SELECTED ASSETS</small><div>${assets.map(x=>`<span title="${esc(x.desc)}">${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}${(d.customAssets||[]).map(x=>`<span>${esc(x)}</span>`).join('')}</div></section><section><small>DEPENDENCIES</small><div>${deps.map(x=>`<span>${esc(x)}</span>`).join('')||'<em>계산된 의존성 없음</em>'}</div></section></div>
+  <div class="builder-review-lists-231 builder-review-standards-233"><section><small>APPLIED STANDARDS</small><div>${standards.map(x=>`<span>${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}</div></section><section><small>KNOWLEDGE PACKS</small><div>${knowledge.map(x=>`<span>${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}</div></section></div>
+  <section class="builder-package-preview-234"><div><span class="eyebrow">BUILDER PACKAGE · PREVIEW</span><h3>제작 패키지 구성 80%</h3><p>Project · Template · Features · Technical · Standards · Knowledge · Assets · Dependencies가 하나의 설계 데이터로 연결되었습니다.</p></div><div class="builder-package-metrics-234"><span><b>${(d.selectedFeatures||[]).length}</b>Features</span><span><b>${standards.length}</b>Standards</span><span><b>${assets.length}</b>Assets</span><span><b>${deps.length}</b>Deps</span></div></section>
+  <div class="builder-future-230"><strong>Next patches</strong><span>v2.3.5 Experience Guardrails</span><span>v2.3.6 AI Development Package</span><span>v2.3.7 Builder Complete</span></div></div>`;
+}
+(function initV234(){
+  (data.builderDrafts||[]).forEach(d=>{if(!d.assetInitialized234)initializeBuilderAssets234(d);});
+  data.releaseNotes=data.releaseNotes||[];data.experiences=data.experiences||[];
+  if(!data.experiences.some(x=>x.id==='EXP-050'))data.experiences.unshift({id:'EXP-050',title:'Reusable assets require explicit dependency tracking',domain:'Builder',severity:'High',issue:'기능 이름만 재사용하고 필수 패키지·저장 방식·권한 구조를 기록하지 않으면 프로젝트마다 구현이 달라짐',cause:'Asset과 Dependency가 별도 목록으로 관리되지 않음',solution:'Builder에서 선택 Asset을 기준으로 Dependencies와 Folder Preview를 자동 계산',prevention:'AI Report 전에 Asset과 Dependency Review를 필수 단계로 사용',status:'Solved',project:'Studio OS',date:'2026-08-06',version:'v2.3.4'});
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.4'))data.releaseNotes.unshift({id:'RN-2.3.4',version:'v2.3.4',date:'2026-08-06',title:'Builder Assets & Dependencies',newItems:['Assets 독립 단계','유형·기능 기반 Asset 추천','Dependency 자동 계산','Folder Preview','Builder Package Preview'],improved:['재사용 Asset 선택·해제','Technical 설정과 Dependency 연동','Review 패키지 구성'],fixed:[],removed:[],experiences:['EXP-050']});
+  saveData();
+})();
+const builderCompletionV233Base234=builderCompletion230;
+builderCompletion230=function(d){
+  const basics=Boolean(String(d.name||'').trim()&&String(d.summary||'').trim());const template=Boolean(d.builderType&&d.builderTemplate);const modules=Boolean((d.selectedScreens||[]).length&&(d.selectedFeatures||[]).length);const technical=Boolean(d.platform&&d.techStack&&d.authMode&&d.membershipMode&&d.permissionMode&&d.storageMode&&d.syncMode&&d.backupMode&&d.deploymentLevel);const standards=Boolean((d.selectedStandards||[]).length&&(d.selectedKnowledge||[]).length);initializeBuilderAssets234(d);const assetReady=Boolean((d.selectedAssets||[]).length&&builderDependencies234(d).length);const review=Number(d.step||1)>=7;return Math.round([basics,template,modules,technical,standards,assetReady,review].filter(Boolean).length/7*100);
+};
+builderStep230=function(step){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;data.builderState.step=Math.max(1,Math.min(7,step));d.step=Math.max(Number(d.step||1),data.builderState.step);d.updatedAt=builderNow230();saveData();renderBuilder230();};
+const builderStepContentV233Base234=builderStepContent230;
+builderStepContent230=function(d,step){if(step<=5)return builderStepContentV233Base234(d,step);if(step===6)return builderAssetsStep234(d);return builderReview234(d);};
+renderBuilderEditor230=function(d){
+  const step=Math.max(1,Math.min(7,Number(data.builderState.step||1)));const labels=['Basics','Template','Features','Platform','Standards','Assets','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230 builder-steps-232 builder-steps-233 builder-steps-234">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 7</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 80%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===7?'disabled':''} onclick="builderStep230(${step+1})">${step===6?'검토':'다음'}</button></footer></section></div>`;
+};
+const renderBuilderV234Base=renderBuilder230;
+renderBuilder230=function(){renderBuilderV234Base();const chip=document.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>80%</strong><span>v2.3.4 Assets & Dependencies</span>';};
+pages.builder=renderBuilder230;
+const renderRoadmapV234Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV234Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.4'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.4 · Assets & Dependencies — 현재 · 80%</strong><p>Asset 추천·선택 · Dependency 계산 · Folder Preview · Builder Package Review</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV234Base=pages.system;pages.system=function(){renderSystemV234Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Assets & Dependencies · Implementation 80%</p></div><div class="system-value-222"><strong>Studio OS v2.3.4</strong></div>';};
+document.title='Studio OS v2.3.4 · Builder Assets & Dependencies';const brand234=document.querySelector('.brand small');if(brand234)brand234.textContent='Builder Assets · v2.3.4';buildNav();
+
+// ===== Studio OS v2.3.5 · Builder Experience Guardrails =====
+const BUILDER_GUARDRAILS_235=[
+  {id:'gr-single-renderer',area:'Architecture',severity:'Critical',types:['all'],label:'Single Renderer 유지',issue:'상태별 화면 전체를 복제하면 삭제한 UI가 다른 상태에서 재등장할 수 있습니다.',rule:'페이지별 단일 Renderer를 사용하고 상태값만 변경합니다.',check:'상태 전환 전·후 동일 레이아웃 검증'},
+  {id:'gr-layer-separation',area:'Architecture',severity:'High',types:['all'],label:'UI·업무·저장 레이어 분리',issue:'UI 코드에서 DB와 업무 규칙을 직접 처리하면 변경 영향이 확산됩니다.',rule:'Presentation · Domain/Application · Data 계층을 분리합니다.',check:'화면 코드의 직접 저장소 접근 여부 확인'},
+  {id:'gr-delete-residue',area:'Maintenance',severity:'Critical',types:['all'],label:'삭제 기능 잔존 검사',issue:'삭제한 화면·버튼·함수가 다른 Renderer 또는 이벤트에 남을 수 있습니다.',rule:'삭제 시 UI·Event·State·Storage·Migration 참조를 함께 제거합니다.',check:'코드 검색과 상태별 회귀 테스트 수행'},
+  {id:'gr-migration',area:'Data',severity:'High',types:['all'],label:'데이터 Migration 필수',issue:'필드 변경 후 기존 로컬·클라우드 데이터가 새 구조와 충돌할 수 있습니다.',rule:'Schema version과 Migration/Default 보정 로직을 둡니다.',check:'이전 버전 데이터 Import 테스트'},
+  {id:'gr-permission-server',area:'Authentication',severity:'Critical',types:['management','community','asset','finance'],features:['Role & Permission','관리자','회원'],label:'권한을 서버·Rules에서도 강제',issue:'UI에서 버튼만 숨기면 직접 요청으로 권한을 우회할 수 있습니다.',rule:'앱 권한과 DB Security Rules/API 권한을 동일하게 구성합니다.',check:'일반 계정의 관리자 쓰기 차단 테스트'},
+  {id:'gr-account-lifecycle',area:'Authentication',severity:'High',types:['community','finance','management'],label:'계정 생애주기 설계',issue:'가입만 구현하고 재설정·탈퇴·정지·데이터 처리 흐름이 빠질 수 있습니다.',rule:'가입·로그인·복구·정지·탈퇴·삭제 정책을 함께 정의합니다.',check:'계정 복구와 탈퇴 시나리오 테스트'},
+  {id:'gr-search-empty',area:'UX',severity:'Medium',types:['search','management','asset'],features:['Search & Filter'],label:'검색 Empty·오류·초기 상태 분리',issue:'결과 없음과 로딩·오류가 같은 화면으로 보이면 신뢰도가 떨어집니다.',rule:'Initial · Loading · Empty · Error · Success 상태를 분리합니다.',check:'0건·오류·느린 응답 상태 확인'},
+  {id:'gr-raw-summary',area:'Statistics',severity:'High',types:['record','finance'],label:'원본 기록과 집계 데이터 분리',issue:'화면마다 통계를 계산하면 값이 달라지고 수정 이력 추적이 어렵습니다.',rule:'Raw Record → Aggregation Service → Summary 구조를 사용합니다.',check:'동일 데이터의 화면별 합계 일치 확인'},
+  {id:'gr-asset-lifecycle',area:'Asset',severity:'Critical',types:['asset'],label:'자산 삭제보다 Lifecycle 상태 사용',issue:'자산 삭제 시 점검·정비·고장 이력이 끊길 수 있습니다.',rule:'고유 ID를 유지하고 Active·Retired·Disposed 상태로 전환합니다.',check:'폐기 후 과거 이력 조회 확인'},
+  {id:'gr-finance-integrity',area:'Finance',severity:'Critical',types:['finance'],label:'금액 정밀도·수정 이력 보장',issue:'부동소수점과 무이력 수정은 재무 데이터 신뢰성을 훼손합니다.',rule:'정수 최소단위 또는 Decimal을 사용하고 변경 이력을 남깁니다.',check:'합계·반올림·수정 전후 감사 로그 검증'},
+  {id:'gr-community-moderation',area:'Community',severity:'Critical',types:['community'],label:'신고·차단·운영 정책 필수',issue:'콘텐츠 생성 기능만 있고 신고·차단·제재가 없으면 상용 운영이 어렵습니다.',rule:'신고·차단·관리자 조치·이용 정지·감사 로그를 포함합니다.',check:'신고 접수부터 처리 완료까지 테스트'},
+  {id:'gr-game-save',area:'Game',severity:'Critical',types:['game'],label:'게임 저장·복구·버전 호환',issue:'업데이트 후 저장 데이터가 깨지면 진행도가 유실됩니다.',rule:'Save schema version, migration, corruption fallback을 제공합니다.',check:'구버전 Save 로드와 비정상 종료 복구 테스트'},
+  {id:'gr-game-economy',area:'Game',severity:'High',types:['game'],label:'경제·보상 데이터 코드 분리',issue:'재화와 밸런스가 코드에 박히면 조정과 A/B 테스트가 어렵습니다.',rule:'Economy/Balance 데이터를 별도 설정 데이터로 관리합니다.',check:'코드 수정 없이 보상값 변경 확인'},
+  {id:'gr-backup-restore',area:'Operations',severity:'High',types:['all'],label:'백업뿐 아니라 복구 검증',issue:'Export만 있고 실제 Restore가 검증되지 않으면 백업의 의미가 없습니다.',rule:'백업 파일 버전·검증·중복·Rollback 정책을 포함합니다.',check:'백업 → 초기화 → 복구 전체 시나리오'},
+  {id:'gr-release-rollback',area:'Release',severity:'High',types:['all'],label:'배포·Rollback 기준',issue:'업데이트 실패 시 이전 안정 버전으로 돌아갈 수 없으면 운영 중단이 길어집니다.',rule:'Internal Test → Beta → Production과 Rollback 기준을 정의합니다.',check:'배포 전 체크리스트와 긴급 복구 절차 확인'}
+];
+function builderGuardrailApplies235(g,d){
+  const typeOk=(g.types||[]).includes('all')||(g.types||[]).includes(d.builderType||'');
+  if(!typeOk)return false;
+  if(!g.features?.length)return true;
+  const blob=[...(d.selectedFeatures||[]),...(d.selectedAssets||[]).map(id=>BUILDER_ASSET_CATALOG_234.find(x=>x.id===id)?.label||id)].join(' ').toLowerCase();
+  return g.features.some(f=>blob.includes(String(f).toLowerCase()));
+}
+function recommendedGuardrails235(d){return BUILDER_GUARDRAILS_235.filter(g=>builderGuardrailApplies235(g,d)).map(g=>g.id);}
+function initializeBuilderGuardrails235(d,force=false){
+  if(!Array.isArray(d.selectedGuardrails)||force)d.selectedGuardrails=recommendedGuardrails235(d);
+  d.guardrailInitialized235=true;
+  d.qaChecklist235=builderQAChecklist235(d);
+  d.developmentOrder235=builderDevelopmentOrder235(d);
+}
+function toggleBuilderGuardrail235(id){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;initializeBuilderGuardrails235(d);
+  const set=new Set(d.selectedGuardrails||[]);set.has(id)?set.delete(id):set.add(id);d.selectedGuardrails=[...set];d.updatedAt=builderNow230();d.qaChecklist235=builderQAChecklist235(d);saveData();renderBuilder230();
+}
+function applyBuilderGuardrailRecommendation235(){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;initializeBuilderGuardrails235(d,true);d.updatedAt=builderNow230();saveData();renderBuilder230();toast('프로젝트 구성에 맞는 Experience Guardrails를 다시 적용했습니다.');}
+function builderRiskScore235(d){
+  initializeBuilderGuardrails235(d);const gs=(d.selectedGuardrails||[]).map(id=>BUILDER_GUARDRAILS_235.find(x=>x.id===id)).filter(Boolean);
+  const weight={Critical:4,High:3,Medium:2,Low:1};const exposure=gs.reduce((s,g)=>s+(weight[g.severity]||1),0);
+  const mitigated=Math.min(100,Math.round((gs.length/Math.max(1,recommendedGuardrails235(d).length))*100));
+  const level=exposure>=24?'High':exposure>=12?'Medium':'Low';return {level,exposure,mitigated};
+}
+function builderQAChecklist235(d){
+  const base=['모든 Wizard 단계 새로고침 후 선택값 유지','화면·기능 삭제 후 Review와 Export에서 잔존 여부 확인','Loading · Empty · Error · Success 상태 확인','이전 버전 데이터 Migration 및 기본값 보정','백업 파일 생성 후 실제 복구 테스트','Internal Test에서 주요 사용자 흐름 회귀 테스트'];
+  if(d.authMode&&d.authMode!=='로그인 없음')base.push('로그인·복구·로그아웃·탈퇴 및 권한 차단 테스트');
+  if(d.builderType==='community')base.push('게시물 신고·차단·관리자 조치 흐름 테스트');
+  if(d.builderType==='finance')base.push('금액 합계·반올림·수정 이력·월 경계 검증');
+  if(d.builderType==='game')base.push('구버전 Save Migration·오프라인 보상·중복 보상 방지');
+  if(d.builderType==='asset')base.push('자산 폐기 후 점검·정비·고장 이력 유지 확인');
+  return [...new Set(base)];
+}
+function builderDevelopmentOrder235(d){
+  const order=['데이터 모델·고유 ID·Schema version 확정','Repository·Storage Adapter·Migration 구성','Navigation·App Shell·Design System 구성'];
+  if(d.authMode&&d.authMode!=='로그인 없음')order.push('인증·회원·역할·권한 및 Security Rules 구현');
+  order.push('핵심 화면과 Feature Module 구현','상태·오류·Empty 처리 및 감사 로그 연결','백업·복구·Import/Export 검증','통합 테스트·Beta·Release 준비');
+  return order;
+}
+function builderGuardrailsStep235(d){
+  initializeBuilderGuardrails235(d);const applicable=BUILDER_GUARDRAILS_235.filter(g=>builderGuardrailApplies235(g,d));const selected=new Set(d.selectedGuardrails||[]);const groups=[...new Set(applicable.map(x=>x.area))];const risk=builderRiskScore235(d);const qa=builderQAChecklist235(d);const order=builderDevelopmentOrder235(d);
+  return `<div class="builder-guardrail-head-235"><div><span class="eyebrow">EXPERIENCE · GUARDRAILS</span><h3>반복된 실패를 개발 방지 규칙으로 전환합니다.</h3><p>프로젝트 유형과 기능을 기준으로 위험 사례·재발 방지·QA 항목을 자동 구성합니다.</p></div><button onclick="applyBuilderGuardrailRecommendation235()">권장 Guardrail 다시 적용</button></div>
+  <section class="builder-risk-summary-235"><div><small>RISK EXPOSURE</small><strong>${risk.level}</strong><span>${risk.exposure} weighted points</span></div><div><small>GUARDRAIL COVERAGE</small><strong>${risk.mitigated}%</strong><span>${selected.size}/${applicable.length} selected</span></div><div><small>QA CHECKS</small><strong>${qa.length}</strong><span>release checks</span></div></section>
+  <section class="builder-guardrail-section-235"><div class="builder-check-head-231"><div><small>01 · EXPERIENCE GUARDRAILS</small><h3>문제 · 원인 · 예방 규칙</h3></div><span>${selected.size} selected</span></div>${groups.map(group=>`<div class="builder-guardrail-group-235"><h4>${esc(group)}</h4><div class="builder-guardrail-grid-235">${applicable.filter(x=>x.area===group).map(g=>`<button class="builder-guardrail-card-235 ${selected.has(g.id)?'selected':''}" onclick="toggleBuilderGuardrail235('${g.id}')"><i>${selected.has(g.id)?'✓':'+'}</i><span><b>${esc(g.severity)}</b><strong>${esc(g.label)}</strong><small>${esc(g.issue)}</small><em>${esc(g.rule)}</em></span></button>`).join('')}</div></div>`).join('')}</section>
+  <div class="builder-guardrail-lower-235"><section class="builder-guardrail-section-235"><div class="builder-check-head-231"><div><small>02 · DEVELOPMENT ORDER</small><h3>권장 구현 순서</h3></div><span>${order.length} steps</span></div><ol class="builder-order-list-235">${order.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></section><section class="builder-guardrail-section-235"><div class="builder-check-head-231"><div><small>03 · QA CHECKLIST</small><h3>배포 전 검증</h3></div><span>${qa.length} checks</span></div><div class="builder-qa-list-235">${qa.map(x=>`<label><input type="checkbox" disabled><span>${esc(x)}</span></label>`).join('')}</div></section></div>`;
+}
+function builderReview235(d){
+  initializeBuilderAssets234(d);initializeBuilderGuardrails235(d);const type=builderType231(d),tpl=builderTemplate231(d);const standards=(d.selectedStandards||[]).map(id=>BUILDER_STANDARD_PACKS_233.find(x=>x.id===id)).filter(Boolean);const knowledge=(d.selectedKnowledge||[]).map(id=>BUILDER_KNOWLEDGE_PACKS_233.find(x=>x.id===id)).filter(Boolean);const assets=(d.selectedAssets||[]).map(id=>BUILDER_ASSET_CATALOG_234.find(x=>x.id===id)).filter(Boolean);const deps=builderDependencies234(d);const guardrails=(d.selectedGuardrails||[]).map(id=>BUILDER_GUARDRAILS_235.find(x=>x.id===id)).filter(Boolean);const risk=builderRiskScore235(d);const qa=builderQAChecklist235(d);
+  return `<div class="builder-review-230"><div class="builder-review-head-230"><span class="eyebrow">EXPERIENCE & GUARDRAIL REVIEW</span><h2>${esc(d.name||'Untitled Build')}</h2><p>${esc(d.summary||'요약이 아직 없습니다.')}</p></div><div class="builder-review-grid-230"><div><small>Project type</small><strong>${esc(type?.label||'Not selected')}</strong></div><div><small>Base template</small><strong>${esc(tpl?.label||'Not selected')}</strong></div><div><small>Guardrails</small><strong>${guardrails.length}</strong></div><div><small>Risk / QA</small><strong>${risk.level} · ${qa.length}</strong></div></div>
+  <div class="builder-review-lists-231 builder-review-standards-233"><section><small>SELECTED ASSETS</small><div>${assets.map(x=>`<span>${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}${(d.customAssets||[]).map(x=>`<span>${esc(x)}</span>`).join('')}</div></section><section><small>DEPENDENCIES</small><div>${deps.map(x=>`<span>${esc(x)}</span>`).join('')||'<em>계산된 의존성 없음</em>'}</div></section></div>
+  <div class="builder-review-lists-231 builder-review-standards-233"><section><small>APPLIED STANDARDS</small><div>${standards.map(x=>`<span>${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}</div></section><section><small>KNOWLEDGE PACKS</small><div>${knowledge.map(x=>`<span>${esc(x.label)}</span>`).join('')||'<em>선택 없음</em>'}</div></section></div>
+  <section class="builder-review-guardrails-235"><div class="builder-check-head-231"><div><small>EXPERIENCE GUARDRAILS</small><h3>${guardrails.length}개 재발 방지 규칙 연결</h3></div><span>${risk.mitigated}% coverage</span></div><div>${guardrails.map(g=>`<article><b class="sev-${g.severity.toLowerCase()}">${esc(g.severity)}</b><span><strong>${esc(g.label)}</strong><small>${esc(g.rule)}</small></span></article>`).join('')||'<p>선택된 Guardrail이 없습니다.</p>'}</div></section>
+  <section class="builder-package-preview-234 builder-package-preview-235"><div><span class="eyebrow">BUILDER PACKAGE · PREVIEW</span><h3>제작 패키지 구성 90%</h3><p>Template · Technical · Standards · Knowledge · Assets · Dependencies · Experience · QA가 하나의 설계 데이터로 연결되었습니다.</p></div><div class="builder-package-metrics-234"><span><b>${(d.selectedFeatures||[]).length}</b>Features</span><span><b>${assets.length}</b>Assets</span><span><b>${guardrails.length}</b>Guards</span><span><b>${qa.length}</b>QA</span></div></section>
+  <div class="builder-future-230"><strong>Next patches</strong><span>v2.3.6 AI Development Package</span><span>v2.3.7 Builder Complete</span></div></div>`;
+}
+(function initV235(){
+  (data.builderDrafts||[]).forEach(d=>initializeBuilderGuardrails235(d));data.releaseNotes=data.releaseNotes||[];data.experiences=data.experiences||[];
+  const seeds=[
+    {id:'EXP-051',area:'App Development',severity:'Critical',type:'Failure',title:'상태별 Renderer 복제로 삭제 UI 재등장',problem:'출근 전·근무 중 화면을 별도 Renderer로 관리해 삭제했던 카드가 상태 변경 후 다시 나타남',lesson:'페이지는 단일 Renderer를 사용하고 상태값만 변경하며 상태별 회귀 테스트를 수행한다.',constitutionId:'C-UI-SINGLE-RENDERER',project:'Studio OS',status:'Resolved',date:'2026-08-06'},
+    {id:'EXP-052',area:'App Development',severity:'High',type:'Lesson',title:'기능 삭제는 참조 전체를 함께 제거',problem:'UI만 제거하고 이벤트·저장 데이터·이전 함수에 기능 참조가 남음',lesson:'삭제 시 UI·Event·State·Storage·Migration 참조를 코드 검색과 테스트로 함께 제거한다.',constitutionId:'C-MAINT-DELETE',project:'Studio OS',status:'Active',date:'2026-08-06'}
+  ];
+  seeds.forEach(x=>{if(!data.experiences.some(e=>e.id===x.id))data.experiences.unshift(x);});
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.5'))data.releaseNotes.unshift({id:'RN-2.3.5',version:'v2.3.5',date:'2026-08-06',title:'Builder Experience Guardrails',newItems:['Experience Guardrails 독립 단계','위험도·Coverage 계산','개발 순서 자동 생성','QA Checklist 자동 생성'],improved:['Builder Package에 Experience·QA 연결','유형별 상용 운영 위험 반영'],fixed:[],removed:[],experiences:['EXP-051','EXP-052']});saveData();
+})();
+builderCompletion230=function(d){
+  const basics=Boolean(String(d.name||'').trim()&&String(d.summary||'').trim());const template=Boolean(d.builderType&&d.builderTemplate);const modules=Boolean((d.selectedScreens||[]).length&&(d.selectedFeatures||[]).length);const technical=Boolean(d.platform&&d.techStack&&d.authMode&&d.membershipMode&&d.permissionMode&&d.storageMode&&d.syncMode&&d.backupMode&&d.deploymentLevel);const standards=Boolean((d.selectedStandards||[]).length&&(d.selectedKnowledge||[]).length);initializeBuilderAssets234(d);const assetReady=Boolean((d.selectedAssets||[]).length&&builderDependencies234(d).length);initializeBuilderGuardrails235(d);const guards=Boolean((d.selectedGuardrails||[]).length&&builderQAChecklist235(d).length);const review=Number(d.step||1)>=8;return Math.round([basics,template,modules,technical,standards,assetReady,guards,review].filter(Boolean).length/8*100);
+};
+builderStep230=function(step){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;data.builderState.step=Math.max(1,Math.min(8,step));d.step=Math.max(Number(d.step||1),data.builderState.step);d.updatedAt=builderNow230();saveData();renderBuilder230();};
+const builderStepContentV234Base235=builderStepContent230;
+builderStepContent230=function(d,step){if(step<=6)return builderStepContentV234Base235(d,step);if(step===7)return builderGuardrailsStep235(d);return builderReview235(d);};
+renderBuilderEditor230=function(d){
+  const step=Math.max(1,Math.min(8,Number(data.builderState.step||1)));const labels=['Basics','Template','Features','Platform','Standards','Assets','Guardrails','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230 builder-steps-232 builder-steps-233 builder-steps-234 builder-steps-235">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 8</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 90%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===8?'disabled':''} onclick="builderStep230(${step+1})">${step===7?'검토':'다음'}</button></footer></section></div>`;
+};
+const renderBuilderV235Base=renderBuilder230;
+renderBuilder230=function(){renderBuilderV235Base();const chip=document.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>90%</strong><span>v2.3.5 Experience Guardrails</span>';};
+pages.builder=renderBuilder230;
+const renderRoadmapV235Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV235Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.5'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.5 · Experience Guardrails — 현재 · 90%</strong><p>실패 사례 연결 · 위험도 · 개발 순서 · QA Checklist · 재발 방지 규칙</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV235Base=pages.system;pages.system=function(){renderSystemV235Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Experience Guardrails · Implementation 90%</p></div><div class="system-value-222"><strong>Studio OS v2.3.5</strong></div>';};
+document.title='Studio OS v2.3.5 · Builder Experience Guardrails';const brand235=document.querySelector('.brand small');if(brand235)brand235.textContent='Builder Guardrails · v2.3.5';buildNav();
+
+// ===== Studio OS v2.3.6 · Builder AI Development Package =====
+function builderSafeName236(name){return String(name||'Untitled Build').trim().replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_')||'Untitled_Build';}
+function builderPackage236(d){
+  initializeBuilderAssets234(d);initializeBuilderGuardrails235(d);initializeBuilderStandards233(d);
+  const type=builderType231(d),tpl=builderTemplate231(d);
+  const assets=(d.selectedAssets||[]).map(id=>BUILDER_ASSET_CATALOG_234.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,label:x.label,type:x.type||'Asset',status:x.status||'Recommended'}));
+  const guards=(d.selectedGuardrails||[]).map(id=>BUILDER_GUARDRAILS_235.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,severity:x.severity,area:x.area,label:x.label,rule:x.rule,check:x.check}));
+  const standards=(d.selectedStandards||[]).map(id=>BUILDER_STANDARD_PACKS_233.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,label:x.label,required:Boolean(x.required)}));
+  const knowledge=(d.selectedKnowledge||[]).map(id=>BUILDER_KNOWLEDGE_PACKS_233.find(x=>x.id===id)).filter(Boolean).map(x=>({id:x.id,label:x.label}));
+  const dependencies=builderDependencies234(d);
+  const qa=builderQAChecklist235(d),order=builderDevelopmentOrder235(d);
+  return {
+    schema:'studio-os.ai-development-package',schemaVersion:'1.0',builderVersion:'2.3.6',generatedAt:new Date().toISOString(),
+    project:{name:String(d.name||'').trim()||'Untitled Build',summary:d.summary||'',goal:d.goal||'',targetUser:d.targetUser||'',type:{id:d.builderType||'',label:type?.label||''},template:{id:d.builderTemplate||'',label:tpl?.label||''}},
+    product:{screens:[...(d.selectedScreens||[])],features:[...(d.selectedFeatures||[])],customScreens:[...(d.customScreens||[])],customFeatures:[...(d.customFeatures||[])]},
+    technical:{platform:d.platform||'',stack:d.techStack||'',authentication:d.authMode||'',membership:d.membershipMode||'',permission:d.permissionMode||'',storage:d.storageMode||'',sync:d.syncMode||'',backup:d.backupMode||'',deployment:d.deploymentLevel||''},
+    architecture:{folderPreview:builderFolderPreview234(d),standards,knowledge},
+    reuse:{assets,customAssets:[...(d.customAssets||[])],dependencies},
+    quality:{guardrails:guards,developmentOrder:order,qaChecklist:qa},
+    instructions:{preserveSelectedStructure:true,doNotDuplicateRenderers:true,recordChangesAndDecisions:true,returnStudioOSPatch:true}
+  };
+}
+function builderPrompt236(d,pkg=builderPackage236(d)){
+  const lines=[];
+  lines.push(`# AI Development Request · ${pkg.project.name}`,'');
+  lines.push('## 역할','아래 Studio OS Builder 설계 데이터를 기준으로 실제 프로젝트를 제작합니다. 선택된 구조·규칙·자산을 임의로 삭제하거나 중복 구현하지 말고, 변경이 필요하면 사유와 영향 범위를 먼저 명시합니다.','');
+  lines.push('## 프로젝트',`- 유형: ${pkg.project.type.label||'미선택'}`,`- 템플릿: ${pkg.project.template.label||'미선택'}`,`- 목표: ${pkg.project.goal||pkg.project.summary||'미입력'}`,`- 대상 사용자: ${pkg.project.targetUser||'미입력'}`,'');
+  lines.push('## 화면 구조',...(pkg.product.screens.length?pkg.product.screens.map(x=>`- ${x}`):['- 미선택']),'');
+  lines.push('## 기능 모듈',...(pkg.product.features.length?pkg.product.features.map(x=>`- ${x}`):['- 미선택']),'');
+  lines.push('## 기술 구성',`- Platform: ${pkg.technical.platform||'미선택'}`,`- Stack: ${pkg.technical.stack||'미선택'}`,`- Authentication: ${pkg.technical.authentication||'미선택'}`,`- Membership: ${pkg.technical.membership||'미선택'}`,`- Permission: ${pkg.technical.permission||'미선택'}`,`- Storage: ${pkg.technical.storage||'미선택'}`,`- Sync: ${pkg.technical.sync||'미선택'}`,`- Backup: ${pkg.technical.backup||'미선택'}`,`- Deployment: ${pkg.technical.deployment||'미선택'}`,'');
+  lines.push('## 필수 Standards',...pkg.architecture.standards.map(x=>`- ${x.label}${x.required?' (필수)':''}`),'');
+  lines.push('## Knowledge Packs',...pkg.architecture.knowledge.map(x=>`- ${x.label}`),'');
+  lines.push('## 재사용 Assets',...pkg.reuse.assets.map(x=>`- ${x.label}`),...pkg.reuse.customAssets.map(x=>`- ${x} (Custom)`),'');
+  lines.push('## Dependencies',...pkg.reuse.dependencies.map(x=>`- ${x}`),'');
+  lines.push('## Guardrails',...pkg.quality.guardrails.map(x=>`- [${x.severity}] ${x.label}: ${x.rule}`),'');
+  lines.push('## 권장 구현 순서',...pkg.quality.developmentOrder.map((x,i)=>`${i+1}. ${x}`),'');
+  lines.push('## QA Checklist',...pkg.quality.qaChecklist.map(x=>`- [ ] ${x}`),'');
+  lines.push('## 반환 결과','1. 실제 실행 가능한 프로젝트 파일','2. 구현·테스트 결과 요약','3. 변경·결정·오류·Experience를 포함한 Studio OS Return Patch','4. 다음 작업 목록과 현재 진행률');
+  return lines.join('\n');
+}
+function builderHealth236(d){
+  const pkg=builderPackage236(d);const checks=[
+    ['Project',Boolean(pkg.project.name&&pkg.project.type.id&&pkg.project.template.id)],
+    ['Product',Boolean(pkg.product.screens.length&&pkg.product.features.length)],
+    ['Technical',Object.values(pkg.technical).every(Boolean)],
+    ['Standards',Boolean(pkg.architecture.standards.length&&pkg.architecture.knowledge.length)],
+    ['Assets',Boolean(pkg.reuse.assets.length&&pkg.reuse.dependencies.length)],
+    ['Guardrails',Boolean(pkg.quality.guardrails.length&&pkg.quality.qaChecklist.length)],
+    ['Prompt',Boolean(builderPrompt236(d,pkg).length>300)]
+  ];
+  const score=Math.round(checks.filter(x=>x[1]).length/checks.length*100);return {checks,score,ready:score>=85};
+}
+function exportBuilderJSON236(){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const pkg=builderPackage236(d);downloadText(`StudioOS_AI_Development_${builderSafeName236(pkg.project.name)}_v0.1.json`,JSON.stringify(pkg,null,2),'application/json');d.lastAIExportAt236=builderNow230();d.aiExportCount236=Number(d.aiExportCount236||0)+1;saveData();toast('AI Development Package JSON을 생성했습니다.');}
+function exportBuilderPrompt236(){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;const pkg=builderPackage236(d);downloadText(`StudioOS_AI_Prompt_${builderSafeName236(pkg.project.name)}_v0.1.md`,builderPrompt236(d,pkg),'text/markdown');d.lastAIExportAt236=builderNow230();d.aiExportCount236=Number(d.aiExportCount236||0)+1;saveData();toast('GPT 전달용 Prompt를 생성했습니다.');}
+function builderAIPackageStep236(d){
+  const pkg=builderPackage236(d),health=builderHealth236(d),prompt=builderPrompt236(d,pkg);d.aiPackagePreview236=pkg;d.aiPackageHealth236=health.score;
+  return `<div class="builder-ai-head-236"><div><span class="eyebrow">AI DEVELOPMENT PACKAGE</span><h3>설계 데이터를 GPT 제작 기준서로 변환합니다.</h3><p>Project · Technical · Standards · Assets · Experience · QA가 하나의 표준 패키지로 연결됩니다.</p></div><span class="builder-ready-badge-236 ${health.ready?'ready':''}">${health.ready?'READY':'REVIEW'} · ${health.score}%</span></div>
+  <section class="builder-health-grid-236">${health.checks.map(([label,ok])=>`<div class="${ok?'ok':''}"><small>${esc(label)}</small><strong>${ok?'Ready':'Missing'}</strong></div>`).join('')}</section>
+  <section class="builder-package-counts-236"><div><small>Screens</small><strong>${pkg.product.screens.length}</strong></div><div><small>Features</small><strong>${pkg.product.features.length}</strong></div><div><small>Standards</small><strong>${pkg.architecture.standards.length}</strong></div><div><small>Knowledge</small><strong>${pkg.architecture.knowledge.length}</strong></div><div><small>Assets</small><strong>${pkg.reuse.assets.length+pkg.reuse.customAssets.length}</strong></div><div><small>Dependencies</small><strong>${pkg.reuse.dependencies.length}</strong></div><div><small>Guards</small><strong>${pkg.quality.guardrails.length}</strong></div><div><small>QA</small><strong>${pkg.quality.qaChecklist.length}</strong></div></section>
+  <div class="builder-ai-layout-236"><section class="builder-ai-preview-236"><div class="builder-check-head-231"><div><small>PACKAGE MANIFEST</small><h3>AI가 읽을 데이터 구성</h3></div><span>schema v1.0</span></div><div class="builder-manifest-list-236"><span>project</span><span>product</span><span>technical</span><span>architecture</span><span>reuse</span><span>quality</span><span>instructions</span></div><div class="builder-export-actions-236"><button onclick="exportBuilderJSON236()">JSON Package 내보내기</button><button class="primary-btn" onclick="exportBuilderPrompt236()">GPT Prompt 내보내기</button></div></section><section class="builder-prompt-preview-236"><div class="builder-check-head-231"><div><small>PROMPT PREVIEW</small><h3>GPT 전달 설명문</h3></div><span>${prompt.length.toLocaleString()} chars</span></div><pre>${esc(prompt.slice(0,2600))}${prompt.length>2600?'\n…':''}</pre></section></div>`;
+}
+const builderReviewV235Base236=builderReview235;
+function builderReview236(d){const base=builderReviewV235Base236(d);const health=builderHealth236(d),pkg=builderPackage236(d);return base.replace('<div class="builder-future-230">',`<section class="builder-final-package-236"><div><small>AI DEVELOPMENT PACKAGE</small><h3>${health.ready?'제작 전달 준비 완료':'검토 필요'} · ${health.score}%</h3><p>JSON Package와 GPT Prompt를 생성할 수 있습니다.</p></div><div><b>${pkg.reuse.assets.length}</b><span>Assets</span><b>${pkg.quality.guardrails.length}</b><span>Guards</span></div></section><div class="builder-future-230">`).replace('<span>v2.3.6 AI Development Package</span>','<span>v2.3.7 Builder Complete</span>');}
+builderCompletion230=function(d){
+  const basics=Boolean(String(d.name||'').trim()&&String(d.summary||'').trim());const template=Boolean(d.builderType&&d.builderTemplate);const modules=Boolean((d.selectedScreens||[]).length&&(d.selectedFeatures||[]).length);const technical=Boolean(d.platform&&d.techStack&&d.authMode&&d.membershipMode&&d.permissionMode&&d.storageMode&&d.syncMode&&d.backupMode&&d.deploymentLevel);const standards=Boolean((d.selectedStandards||[]).length&&(d.selectedKnowledge||[]).length);initializeBuilderAssets234(d);const assetReady=Boolean((d.selectedAssets||[]).length&&builderDependencies234(d).length);initializeBuilderGuardrails235(d);const guards=Boolean((d.selectedGuardrails||[]).length&&builderQAChecklist235(d).length);const ai=builderHealth236(d).score>=85;const review=Number(d.step||1)>=9;return Math.round([basics,template,modules,technical,standards,assetReady,guards,ai,review].filter(Boolean).length/9*100);
+};
+builderStep230=function(step){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;data.builderState.step=Math.max(1,Math.min(9,step));d.step=Math.max(Number(d.step||1),data.builderState.step);d.updatedAt=builderNow230();saveData();renderBuilder230();};
+const builderStepContentV235Base236=builderStepContent230;
+builderStepContent230=function(d,step){if(step<=7)return builderStepContentV235Base236(d,step);if(step===8)return builderAIPackageStep236(d);return builderReview236(d);};
+renderBuilderEditor230=function(d){
+  const step=Math.max(1,Math.min(9,Number(data.builderState.step||1)));const labels=['Basics','Template','Features','Platform','Standards','Assets','Guardrails','AI Package','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(d.name||'Untitled Build')}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230 builder-steps-232 builder-steps-233 builder-steps-234 builder-steps-235 builder-steps-236">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 9</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 95%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===9?'disabled':''} onclick="builderStep230(${step+1})">${step===8?'검토':'다음'}</button></footer></section></div>`;
+};
+(function seedV236(){
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.6'))data.releaseNotes.unshift({id:'RN-2.3.6',version:'v2.3.6',date:'2026-08-06',title:'Builder AI Development Package',newItems:['AI Development Package 독립 단계','Package Health 검사','JSON Package 생성','GPT Prompt 생성','Package Manifest'],improved:['Builder Review 제작 준비 상태 표시','Standards·Assets·Experience·QA 통합'],fixed:[],removed:[],experiences:[]});saveData();
+})();
+const renderBuilderV236Base=renderBuilder230;
+renderBuilder230=function(){renderBuilderV236Base();const chip=document.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>95%</strong><span>v2.3.6 AI Development Package</span>';};
+pages.builder=renderBuilder230;
+const renderRoadmapV236Base=renderRoadmap;renderRoadmap=function(){renderRoadmapV236Base();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.6'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.6 · AI Development Package — 현재 · 95%</strong><p>Package Health · JSON Manifest · GPT Prompt · AI 제작 기준서</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV236Base=pages.system;pages.system=function(){renderSystemV236Base();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder AI Development Package · Implementation 95%</p></div><div class="system-value-222"><strong>Studio OS v2.3.6</strong></div>';};
+document.title='Studio OS v2.3.6 · Builder AI Development Package';const brand236=document.querySelector('.brand small');if(brand236)brand236.textContent='Builder AI Package · v2.3.6';buildNav();
+
+/* =========================================================
+   Studio OS v2.3.7 · Builder Complete
+   Builder progress: 100%
+   - Build name placeholder fix
+   - Final package export and GPT handoff
+   - Builder run / Assets / History / Work Log / Experience links
+   ========================================================= */
+function builderDisplayName237(d){return String(d?.name||'').trim()||'Untitled Build';}
+function builderFileName237(d){const raw=String(d?.name||'').trim();if(raw)return builderSafeName236(raw);const stamp=new Date().toISOString().replace(/[-:T]/g,'').slice(0,12);return `Build_${stamp}`;}
+
+/* New drafts start with an empty name; Untitled Build is display-only. */
+const builderEmptyDraftV236Base237=builderEmptyDraft230;
+builderEmptyDraft230=function(){const d=builderEmptyDraftV236Base237();d.name='';d.step=1;return d;};
+
+function builderPackageBundle237(d){
+  const pkg=builderPackage236(d);
+  const prompt=builderPrompt236(d,pkg);
+  return {
+    schema:'studio-os-ai-development-bundle-v1',
+    generatedAt:new Date().toISOString(),
+    studioOSVersion:'2.3.7',
+    builderStatus:'Complete',
+    files:{
+      'builder.json':pkg,
+      'builder_prompt.md':prompt,
+      'development_package.json':{project:pkg.project,product:pkg.product,technical:pkg.technical,instructions:pkg.instructions},
+      'architecture.json':pkg.architecture,
+      'asset_map.json':pkg.reuse,
+      'quality_guardrails.json':pkg.quality,
+      'README.md':`# ${builderDisplayName237(d)} AI Development Package\n\nGenerated by Studio OS v2.3.7 Builder Complete.\n\nUpload this JSON bundle or the exported GPT prompt to ChatGPT and request implementation based on the included standards, assets, dependencies, guardrails, and QA checklist.`
+    }
+  };
+}
+
+function registerBuilderCompletion237(d,bundle,action='Export Package'){
+  const name=builderDisplayName237(d),now=new Date(),iso=now.toISOString(),date=todayISO();
+  d.status='Completed';d.completedAt237=iso;d.lastExportAt237=iso;d.exportCount237=Number(d.exportCount237||0)+1;d.step=9;
+  data.builderRuns=data.builderRuns||[];
+  data.builderRuns.unshift({id:uid('BR'),draftId:d.id,name,result:'AI Development Package generated',action,date:now.toLocaleString('ko-KR'),version:'v1.0',packageSchema:bundle.schema});
+  data.digitalAssets=data.digitalAssets||[];
+  const assetId=`BLD-PKG-${d.id}`;
+  const existing=data.digitalAssets.find(x=>x.id===assetId);
+  const asset=normalizeV15Asset({id:assetId,name:`${name} AI Development Package`,kind:'Document',type:'AI Report',project:name==='Untitled Build'?'':name,version:'1.0',status:'Reusable',location:`${builderFileName237(d)}_AI_Development_Package.json`,usageProjects:name==='Untitled Build'?[]:[name],note:'Studio OS Builder v2.3.7에서 생성된 GPT 제작 기준 패키지',updated:date,history:[{date,version:'1.0',status:'Reusable'}]});
+  if(existing)Object.assign(existing,asset);else data.digitalAssets.unshift(asset);
+  data.memories=data.memories||[];
+  data.memories.unshift({id:uid('m'),title:`Builder Complete · ${name}`,detail:`${action} · AI Development Package 생성 · GPT 전달 준비 완료`,type:'Build',date:'방금'});
+  data.manualWorkLogs=data.manualWorkLogs||[];
+  data.manualWorkLogs.unshift({id:uid('MWL'),date,title:`Builder Package Generated · ${name}`,project:name,detail:`${action} · Builder v2.3.7 · Export Ready`,createdAt:iso});
+  data.experiences=data.experiences||[];
+  const warnings=(bundle.files['quality_guardrails.json']?.warnings||bundle.files['quality_guardrails.json']?.guardrails||[]).filter(x=>x&&x.severity==='Critical');
+  if(warnings.length&&!data.experiences.some(x=>x.id===`EXP-BLD-${d.id}`))data.experiences.unshift({id:`EXP-BLD-${d.id}`,title:`${name} Builder critical guardrails`,domain:'Builder',severity:'High',issue:`Builder 검토에서 Critical Guardrail ${warnings.length}건 확인`,cause:'선택한 기능·플랫폼 조합에 필수 안전 규칙이 포함됨',solution:'AI Development Package의 Guardrails와 QA Checklist를 제작 기준으로 적용',prevention:'GPT 제작 결과 Import 전 Critical Guardrail 충족 여부 확인',status:'Candidate',project:name,date,version:'v2.3.7'});
+  saveData();
+}
+
+function exportBuilderPackage237(){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;
+  const bundle=builderPackageBundle237(d),health=builderHealth236(d);
+  if(health.score<85)return toast('AI Package 검토 항목을 먼저 보완하세요.');
+  downloadText(`${builderFileName237(d)}_AI_Development_Package.json`,JSON.stringify(bundle,null,2),'application/json');
+  registerBuilderCompletion237(d,bundle,'Export Package');renderBuilder230();toast('AI Development Package를 생성했습니다.');
+}
+function sendBuilderToGPT237(){
+  const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;
+  const bundle=builderPackageBundle237(d),health=builderHealth236(d);
+  if(health.score<85)return toast('AI Package 검토 항목을 먼저 보완하세요.');
+  downloadText(`${builderFileName237(d)}_GPT_Prompt.md`,bundle.files['builder_prompt.md'],'text/markdown');
+  registerBuilderCompletion237(d,bundle,'Send to GPT');renderBuilder230();toast('GPT 전달용 Prompt를 생성했습니다.');
+}
+function reopenBuilderDraft237(){const d=builderDraft230(data.builderState.activeDraftId);if(!d)return;d.status='Draft';delete d.completedAt237;saveData();renderBuilder230();}
+
+const builderAIPackageStepV236Base237=builderAIPackageStep236;
+builderAIPackageStep236=function(d){
+  const base=builderAIPackageStepV236Base237(d);
+  return base.replace('<div class="builder-export-actions-236">','<div class="builder-export-actions-236"><button onclick="exportBuilderPackage237()">Export Package</button><button class="primary-btn" onclick="sendBuilderToGPT237()">Send to GPT</button>');
+};
+
+const builderReviewV236Base237=builderReview236;
+builderReview236=function(d){
+  const base=builderReviewV236Base237(d),health=builderHealth236(d);
+  const completed=Boolean(d.completedAt237);
+  const complete=`<section class="builder-complete-card-237 ${completed?'done':''}"><div><small>BUILDER COMPLETE</small><h3>${completed?'AI Development Package Generated':'Ready to complete'} · ${health.score}%</h3><p>${completed?'History · Assets · Work Log에 생성 결과가 연결되었습니다.':'최종 패키지를 내보내거나 GPT Prompt를 생성하세요.'}</p></div><div class="builder-complete-actions-237"><button onclick="exportBuilderPackage237()">Export Package</button><button class="primary-btn" onclick="sendBuilderToGPT237()">Send to GPT</button>${completed?'<button onclick="reopenBuilderDraft237()">다시 편집</button>':''}</div></section>`;
+  return base.replace('<section class="builder-final-package-236">',complete+'<section class="builder-final-package-236">');
+};
+
+/* Override Basics so Untitled Build is a placeholder, never an input value. */
+const builderStepContentV236Base237=builderStepContent230;
+builderStepContent230=function(d,step){
+  if(step===1)return `<div class="builder-editor-grid-230">${builderField230('Build name','name',d.name==='Untitled Build'?'':d.name,'Untitled Build')}${builderField230('One-line summary','summary',d.summary,'설계 의도를 한 줄로 정리')}</div><div class="builder-help-230"><strong>Builder Complete · Basics</strong><p>Build Name은 입력값이 없을 때만 Untitled Build 안내문구로 표시됩니다.</p></div>`;
+  return builderStepContentV236Base237(d,step);
+};
+
+/* Final 100% editor and display labels. */
+renderBuilderEditor230=function(d){
+  const step=Math.max(1,Math.min(9,Number(data.builderState.step||1)));const labels=['Basics','Template','Features','Platform','Standards','Assets','Guardrails','AI Package','Review'];
+  return `<div class="builder-editor-shell-230"><header class="builder-editor-top-230"><button onclick="closeBuilderEditor230()">← Drafts</button><div><span class="eyebrow">BUILDER DRAFT</span><h1>${esc(builderDisplayName237(d))}</h1></div><div class="builder-save-state-230"><span id="builderAutosave230">Auto save</span><strong id="builderDraftProgress230">${builderCompletion230(d)}%</strong></div></header><nav class="builder-steps-230 builder-steps-232 builder-steps-233 builder-steps-234 builder-steps-235 builder-steps-236">${labels.map((x,i)=>`<button class="${step===i+1?'active':''} ${Number(d.step||1)>i?'visited':''}" onclick="builderStep230(${i+1})"><b>${i+1}</b><span>${x}</span></button>`).join('')}</nav><section class="builder-editor-card-230 panel"><div class="builder-editor-title-230"><div><small>STEP ${step} / 9</small><h2>${labels[step-1]}</h2></div><span>Builder progress · 100%</span></div>${builderStepContent230(d,step)}<footer class="builder-editor-actions-230"><button ${step===1?'disabled':''} onclick="builderStep230(${step-1})">이전</button><button class="primary-btn" ${step===9?'disabled':''} onclick="builderStep230(${step+1})">${step===8?'검토':'다음'}</button></footer></section></div>`;
+};
+
+(function seedV237(){
+  (data.builderDrafts||[]).forEach(d=>{if(d.name==='Untitled Build')d.name='';});
+  data.releaseNotes=data.releaseNotes||[];
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.3.7'))data.releaseNotes.unshift({id:'RN-2.3.7',version:'v2.3.7',date:'2026-08-06',title:'Builder Complete',newItems:['Export Package','Send to GPT','Builder Complete 상태','Build History·Assets·Work Log 연결'],improved:['AI Development Package 최종 Export','Build Name placeholder 처리'],fixed:['Untitled Build가 실제 값으로 저장되어 입력명 뒤에 붙는 문제'],removed:[],experiences:[]});
+  saveData();
+})();
+
+const renderBuilderV236Base237=renderBuilder230;
+renderBuilder230=function(){renderBuilderV236Base237();const chip=document.querySelector('.builder-patch-chip-230');if(chip)chip.innerHTML='<small>Implementation</small><strong>100%</strong><span>v2.3.7 Builder Complete</span>';};
+pages.builder=renderBuilder230;
+const renderRoadmapV236Base237=renderRoadmap;renderRoadmap=function(){renderRoadmapV236Base237();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.7'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.7 · Builder Complete — 100%</strong><p>AI Package Export · GPT Prompt · Build History · Asset Registry · Placeholder Fix</p></div>');};pages.roadmap=renderRoadmap;
+const renderSystemV236Base237=pages.system;pages.system=function(){renderSystemV236Base237();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Complete · Implementation 100%</p></div><div class="system-value-222"><strong>Studio OS v2.3.7</strong></div>';};
+document.title='Studio OS v2.3.7 · Builder Complete';const brand237=document.querySelector('.brand small');if(brand237)brand237.textContent='Builder Complete · v2.3.7';buildNav();
