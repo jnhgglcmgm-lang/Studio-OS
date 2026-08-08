@@ -3289,3 +3289,269 @@ document.title='Studio OS v2.3.7 · Builder Complete';const brand237=document.qu
   const brand=document.querySelector('.brand small');
   if(brand)brand.textContent='Builder Complete · v2.3.7.1';
 })();
+
+
+/* ============================================================
+   Studio OS v2.4.0 · Patch Engine Complete
+   2026-08-08
+   Scope:
+   1) Patch Engine Complete
+   2) Project Diff Engine
+   3) Import Merge Engine
+   4) Smart Daily Closing
+   5) Preview Engine
+   6) Schema Manager
+   ============================================================ */
+(function studioOSV240(){
+  const V240='2.4.0';
+  data.patchBaselines240=data.patchBaselines240||{};
+  data.schemaRegistry240=data.schemaRegistry240||{
+    projectPatch:{current:'studio-os-project-patch-v1',accepted:['studio-os-project-patch-v1','studio-os-patch-v1']},
+    dailyClosing:{current:'studio-os-daily-closing-v1',accepted:['studio-os-daily-closing-v1']}
+  };
+  data.patchConflicts240=data.patchConflicts240||[];
+
+  const clone240=x=>JSON.parse(JSON.stringify(x??null));
+  const same240=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
+  const key240=x=>String(x?.id||x?.patchId||x?.packageId||x?.name||'');
+  const safe240=s=>String(s||'Project').trim().replace(/[^0-9A-Za-z가-힣._-]+/g,'_').replace(/^_+|_+$/g,'')||'Project';
+  const currentProject240=id=>data.projects.find(x=>x.id===id)||null;
+
+  function projectState240(projectId){
+    const p=currentProject240(projectId);if(!p)return null;
+    const pkg=projectPackage(projectId);
+    return {
+      project:clone240(pkg.project),
+      development:clone240(pkg.development),
+      constitution:clone240(pkg.constitution),
+      rules:clone240(pkg.rules||[]),
+      decisions:clone240(pkg.decisions||[]),
+      workspace:clone240(data.workspaces?.[projectId]||null),
+      assets:clone240(pkg.assets||[]),
+      experiences:clone240((data.experiences||[]).filter(x=>!x.project||x.project==='Common'||x.project===p.name||x.area==='App Development').slice(0,20))
+    };
+  }
+
+  function scalarDiff240(before,after,path=''){
+    const rows=[];
+    if(same240(before,after))return rows;
+    if(before===null||after===null||typeof before!=='object'||typeof after!=='object'||Array.isArray(before)||Array.isArray(after)){
+      rows.push({path,before,after});return rows;
+    }
+    const keys=new Set([...Object.keys(before||{}),...Object.keys(after||{})]);
+    keys.forEach(k=>rows.push(...scalarDiff240(before?.[k],after?.[k],path?`${path}.${k}`:k)));
+    return rows;
+  }
+
+  function projectDiff240(projectId,nextState=null){
+    const current=nextState||projectState240(projectId);if(!current)return {baseline:false,changes:[]};
+    const base=data.patchBaselines240[projectId];
+    if(!base)return {baseline:false,changes:[{path:'baseline',before:'없음',after:'현재 상태 전체'}]};
+    const keep=['project','development','workspace'];
+    let changes=[];keep.forEach(k=>changes.push(...scalarDiff240(base[k],current[k],k)));
+    const countDiff=(k)=>{const a=(base[k]||[]).length,b=(current[k]||[]).length;if(a!==b)changes.push({path:`${k}.count`,before:a,after:b});};
+    ['rules','decisions','assets','experiences'].forEach(countDiff);
+    return {baseline:true,changes:changes.slice(0,80)};
+  }
+
+  function setBaseline240(projectId,state=null){
+    data.patchBaselines240[projectId]=clone240(state||projectState240(projectId));
+    saveData();
+  }
+
+  function patchPayload240(type,projectId){
+    const payload=patchPayload19(type,projectId);
+    const state=projectState240(projectId),diff=projectDiff240(projectId,state);
+    payload.targetStudioOS='2.4.0+';
+    payload.generatedBy='Studio OS v2.4 Patch Engine';
+    payload.diff={baselineFound:diff.baseline,changes:diff.changes};
+    payload.schemaVersion='1.0';
+    return payload;
+  }
+
+  function validate240(raw){
+    if(!raw||typeof raw!=='object')throw new Error('JSON 객체가 아닙니다.');
+    if(raw.schema==='studio-os-project-patch-v1'){
+      if(!raw.patchId||!raw.patchType||!raw.project?.name)throw new Error('Project Patch 필수 필드가 없습니다.');
+      return {kind:'project',payload:raw,migrated:false};
+    }
+    if(raw.schema==='studio-os-patch-v1'){
+      const p=raw.projectUpdate||{};
+      const migrated={
+        schema:'studio-os-project-patch-v1',patchId:raw.patchId||`MIGRATED-${Date.now()}`,patchType:'Development',generatedAt:raw.generatedAt||new Date().toISOString(),source:'Schema Manager v2.4 migration',targetStudioOS:'2.4.0+',projectVersion:p.currentVersion||raw.version||'0.0.0',
+        project:{name:p.name||raw.project||'Unknown',status:p.status||'Active',progress:Number(p.progress||0),current:p.current||p.currentGoal||'',next:p.next||p.nextMilestone||''},
+        development:{projectId:p.id||'',status:p.status||'Planning',currentVersion:p.currentVersion||'0.0.0',targetVersion:p.targetVersion||p.currentVersion||'0.0.0',currentGoal:p.currentGoal||p.current||'',sprint:'Migrated',openIssues:[],buildHistory:[],lastExport:null,lastImport:null},
+        constitution:null,rules:[],decisions:raw.journal||[],workspace:{tasks:[],notes:raw.journal||[],files:[],activity:[],createdAt:todayISO()},assets:raw.assets||[],experiences:[],roadmap:[]
+      };
+      return {kind:'project',payload:migrated,migrated:true};
+    }
+    if(raw.schema==='studio-os-daily-closing-v1'){
+      if(!raw.packageId||!raw.date)throw new Error('Daily Closing 필수 필드가 없습니다.');
+      return {kind:'daily',payload:raw,migrated:false};
+    }
+    throw new Error(`지원하지 않는 schema: ${raw.schema||'없음'}`);
+  }
+
+  function findItem240(list,item){
+    const k=key240(item);return k?list.find(x=>key240(x)===k):null;
+  }
+  function mergeItem240(list,item,label){
+    const existing=findItem240(list,item);
+    if(!existing){list.unshift(clone240(item));return 'added';}
+    if(same240(existing,item))return 'skipped';
+    Object.assign(existing,clone240(item));
+    data.patchConflicts240.unshift({date:new Date().toISOString(),label,key:key240(item),resolution:'merged'});
+    return 'merged';
+  }
+  function mergeList240(list,items,label){
+    const r={added:0,merged:0,skipped:0};(items||[]).forEach(item=>{const x=mergeItem240(list,item,label);r[x]++;});return r;
+  }
+
+  function localCompare240(patch){
+    const cur=data.projects.find(x=>x.id===patch.project?.id)||data.projects.find(x=>x.name===patch.project?.name);
+    const before={project:clone240(cur),development:clone240(data.developmentRecords.find(x=>x.projectId===(patch.development?.projectId||patch.project?.id))||null),workspace:clone240(data.workspaces?.[patch.project?.id]||null)};
+    const after={project:cur?{...clone240(cur),...clone240(patch.project)}:clone240(patch.project),development:clone240(patch.development),workspace:clone240(patch.workspace)};
+    let changes=[];['project','development','workspace'].forEach(k=>changes.push(...scalarDiff240(before[k],after[k],k)));
+    return changes.slice(0,60);
+  }
+
+  function diffHtml240(changes){
+    if(!changes.length)return '<div class="diff-empty-240">변경되는 값이 없습니다.</div>';
+    return `<div class="diff-list-240">${changes.slice(0,30).map(x=>`<div class="diff-row-240"><code>${esc(x.path)}</code><span>${esc(typeof x.before==='object'?JSON.stringify(x.before):String(x.before??'-'))}</span><b>→</b><strong>${esc(typeof x.after==='object'?JSON.stringify(x.after):String(x.after??'-'))}</strong></div>`).join('')}${changes.length>30?`<small>외 ${changes.length-30}개 변경</small>`:''}</div>`;
+  }
+
+  window.downloadPatchV240=function(type){
+    try{
+      const id=document.querySelector('#patchProject19')?.value;if(!id)return toast('프로젝트를 선택하세요.');
+      const p=currentProject240(id),payload=patchPayload240(type,id);
+      downloadText(`StudioOS_Patch_${safe240(p.name)}_${payload.projectVersion}_${type}.studioospatch.json`,JSON.stringify(payload,null,2),'application/json');
+      setBaseline240(id,projectState240(id));toast(`${type} Patch를 생성했습니다. Diff 기준선도 저장했습니다.`);
+    }catch(e){console.error(e);toast(`Patch 생성 실패: ${e.message}`);}
+  };
+
+  function smartClosing240(){
+    const date=todayISO();
+    const selected=document.querySelector('#patchProject19')?.value||data.projects?.[0]?.id;
+    const p=currentProject240(selected);
+    const log=(data.workMode?.logs||[]).find(x=>String(x.date||'')===date)||(data.workMode?.logs||[])[0]||null;
+    const dc=dailyClosingPayloadV218(log);
+    dc.version=V240;dc.packageId=`DCP-${date}-StudioOS-v2.4.0`;
+    dc.project=p?.name||'Studio OS';
+    dc.smartSummary={
+      projectId:selected||null,
+      projectVersion:p?getDevelopmentRecord(p.id)?.currentVersion||'-':'-',
+      projectDiff:p?projectDiff240(p.id).changes:[],
+      decisions:(data.decisions||[]).filter(x=>String(x.date||'').slice(0,10)===date).map(x=>x.id||x.title),
+      experiences:(data.experiences||[]).filter(x=>String(x.date||'').slice(0,10)===date).map(x=>x.id||x.title),
+      rules:(data.constitution||[]).filter(x=>String(x.updated||'').slice(0,10)===date).map(x=>x.id||x.title)
+    };
+    dc.nextWork=(dc.nextWork||[]).filter((x,i,a)=>a.findIndex(y=>y.title===x.title&&y.project===x.project)===i);
+    return dc;
+  }
+
+  window.downloadSmartClosing240=function(){
+    try{const dc=smartClosing240();downloadText(`StudioOS_DailyClosing_${dc.date}.dailyclosing.json`,JSON.stringify(dc,null,2),'application/json');toast('Smart Daily Closing을 생성했습니다.');}catch(e){toast(`Daily Closing 생성 실패: ${e.message}`);}
+  };
+
+  window.downloadClosingSet240=function(){
+    try{
+      const id=document.querySelector('#patchProject19')?.value||data.projects?.[0]?.id;if(!id)return toast('프로젝트를 선택하세요.');
+      window.downloadPatchV240('Development');
+      setTimeout(()=>window.downloadSmartClosing240(),250);
+      toast('퇴근 세트(Project Patch + Daily Closing)를 생성합니다.');
+    }catch(e){toast(`퇴근 세트 생성 실패: ${e.message}`);}
+  };
+
+  let pending240=null;
+  window.previewPatchFile240=async function(){
+    const f=document.querySelector('#patchFile19')?.files?.[0];if(!f)return toast('파일을 선택하세요.');
+    try{
+      const raw=JSON.parse(await f.text()),v=validate240(raw);pending240=v;pendingPatch19=v.payload;
+      const host=document.querySelector('#patchPreview19');
+      if(v.kind==='project'){
+        const p=v.payload,duplicate=(data.patchImports||[]).some(x=>x.patchId===p.patchId),changes=localCompare240(p);
+        host.innerHTML=`<div class="patch-preview-card-v19 preview-240"><div class="preview-head-240"><strong>${esc(p.patchType)} Patch · ${esc(p.project?.name||'-')}</strong><span>${v.migrated?'Migrated':'Validated'}</span></div><p>Patch ID: ${esc(p.patchId)}</p><div class="preview-counts-240"><span>Rules ${(p.rules||[]).length}</span><span>Assets ${(p.assets||[]).length}</span><span>Experience ${(p.experiences||[]).length}</span><span>Changes ${changes.length}</span></div><h4>Before → After</h4>${diffHtml240(changes)}${duplicate?'<b class="duplicate-v19">이미 적용된 패치입니다.</b>':'<button class="primary-btn compact" onclick="applyPatch240()">Merge 적용</button>'}</div>`;
+      }else{
+        const p=v.payload,duplicate=(data.dailyClosingImports||[]).some(x=>x.packageId===p.packageId);
+        host.innerHTML=`<div class="patch-preview-card-v19 preview-240"><div class="preview-head-240"><strong>Daily Closing · ${esc(p.date)}</strong><span>Validated</span></div><p>${esc(p.packageId)}</p><div class="preview-counts-240"><span>Work Log ${p.workLog?1:0}</span><span>Experience ${(p.experiences||[]).length}</span><span>Rules ${(p.constitution||[]).length}</span><span>Next ${(p.nextWork||[]).length}</span></div>${duplicate?'<b class="duplicate-v19">이미 적용된 퇴근 파일입니다.</b>':'<button class="primary-btn compact" onclick="applyDailyClosingV218()">Merge 적용</button>'}</div>`;
+      }
+    }catch(e){pending240=null;pendingPatch19=null;document.querySelector('#patchPreview19').textContent=`검증 실패: ${e.message}`;}
+  };
+
+  window.applyPatch240=function(){
+    const p=pendingPatch19;if(!p)return;
+    if((data.patchImports||[]).some(x=>x.patchId===p.patchId))return toast('이미 적용된 패치입니다.');
+    try{
+      const project=p.project;if(project){let cur=data.projects.find(x=>x.id===project.id)||data.projects.find(x=>x.name===project.name);if(cur)Object.assign(cur,clone240(project));else data.projects.push(clone240(project));}
+      if(p.constitution)upsertV19(data.projectConstitutions,p.constitution,'projectId');
+      const ruleResult=mergeList240(data.constitution,p.rules||[],'Constitution');
+      const decResult=mergeList240(data.decisions,p.decisions||[],'Decision');
+      const assetResult=mergeList240(data.digitalAssets,p.assets||[],'Asset');
+      const expResult=mergeList240(data.experiences,p.experiences||[],'Experience');
+      if(p.development){let d=data.developmentRecords.find(x=>x.projectId===p.development.projectId);if(d)Object.assign(d,clone240(p.development));else data.developmentRecords.push(clone240(p.development));}
+      if(p.workspace&&p.project?.id)data.workspaces[p.project.id]=clone240(p.workspace);
+      data.patchImports.unshift({patchId:p.patchId,type:p.patchType,project:p.project?.name||'-',version:p.projectVersion,date:new Date().toLocaleString('ko-KR'),counts:{rules:(p.rules||[]).length,assets:(p.assets||[]).length,experiences:(p.experiences||[]).length},merge:{rules:ruleResult,decisions:decResult,assets:assetResult,experiences:expResult}});
+      if(p.project?.id)setBaseline240(p.project.id,projectState240(p.project.id));
+      saveData();pending240=null;pendingPatch19=null;renderExperience19();toast(`Patch Merge 완료 · Experience ${expResult.added} 추가 / ${expResult.merged} 병합`);
+    }catch(e){toast(`Patch 적용 실패: ${e.message}`);}
+  };
+
+  function renderSchemaManager240(){
+    const registry=data.schemaRegistry240;
+    return `<section class="panel schema-panel-240"><span class="eyebrow">Schema Manager</span><h3>Patch 호환성</h3><div class="schema-grid-240"><div><small>Project Patch</small><strong>${esc(registry.projectPatch.current)}</strong><span>legacy studio-os-patch-v1 자동 변환</span></div><div><small>Daily Closing</small><strong>${esc(registry.dailyClosing.current)}</strong><span>v1 validation</span></div><div><small>Merge Conflict</small><strong>${(data.patchConflicts240||[]).length}</strong><span>자동 병합 기록</span></div></div></section>`;
+  }
+
+  const baseRenderPatchCenter240=renderPatchCenter19;
+  renderPatchCenter19=function(){
+    baseRenderPatchCenter240();
+    const body=document.querySelector('#experienceBody19');if(!body)return;
+    const buttons=[...body.querySelectorAll('.patch-actions-v19 button')];
+    const dev=buttons.find(b=>b.textContent.includes('Development Patch'));
+    const rel=buttons.find(b=>b.textContent.includes('Release Patch'));
+    const close=buttons.find(b=>b.textContent.includes('Daily Closing'));
+    if(dev)dev.onclick=()=>downloadPatchV240('Development');
+    if(rel)rel.onclick=()=>downloadPatchV240('Release');
+    if(close){close.textContent='Smart Daily Closing';close.onclick=()=>downloadSmartClosing240();}
+    const action=body.querySelector('.patch-actions-v19');
+    if(action&&!action.querySelector('.closing-set-240')){const b=document.createElement('button');b.className='tab closing-set-240';b.textContent='퇴근 세트 생성';b.onclick=()=>downloadClosingSet240();action.appendChild(b);}
+    const previewBtn=document.querySelector('#patchPreviewButton216')||[...body.querySelectorAll('button')].find(b=>b.textContent.trim()==='Preview'||b.textContent.includes('Patch Preview'));
+    if(previewBtn)previewBtn.onclick=()=>previewPatchFile240();
+    const importPanel=body.querySelector('.patch-import-v19');if(importPanel){const p=importPanel.querySelector('p');if(p)p.innerHTML='<code>.studioospatch.json</code> / <code>.dailyclosing.json</code> · Schema 검증 → Before/After Preview → Merge';}
+    body.insertAdjacentHTML('beforeend',renderSchemaManager240());
+  };
+
+  /* File selection in v2.1.8 already enables Preview; keep it and route to v2.4 preview. */
+  const baseRenderExperience240=renderExperience19;
+  renderExperience19=function(){baseRenderExperience240();};
+
+  /* Daily Closing merge: strengthen duplicate handling for Constitution/Experience. */
+  window.applyDailyClosingV240=function(){
+    const p=pendingPatch19;if(!p||p.schema!=='studio-os-daily-closing-v1')return;
+    if((data.dailyClosingImports||[]).some(x=>x.packageId===p.packageId))return toast('이미 적용된 퇴근 파일입니다.');
+    try{
+      const exp=mergeList240(data.experiences,p.experiences||[],'Experience');
+      const rules=mergeList240(data.constitution,p.constitution||[],'Constitution');
+      (p.nextWork||[]).forEach(n=>{if(!data.tasks.some(t=>t.title===n.title&&t.project===n.project))data.tasks.unshift({id:uid('t'),title:n.title,project:n.project||'',status:'Todo',priority:n.priority||'Medium',due:'',createdAt:todayISO()});});
+      if(p.workLog){data.workMode=data.workMode||{};data.workMode.logs=data.workMode.logs||[];if(!data.workMode.logs.some(x=>x.date===p.workLog.date))data.workMode.logs.unshift(clone240(p.workLog));}
+      data.memories.unshift({id:uid('m'),title:`Daily Closing Import · ${p.date}`,detail:`${p.project||'Studio OS'} · Experience ${exp.added}/${exp.merged} · Rule ${rules.added}/${rules.merged}`,type:'Work Log',date:'방금'});
+      data.dailyClosingImports.unshift({packageId:p.packageId,date:p.date,project:p.project||'Studio OS',version:p.version||'-',importedAt:new Date().toLocaleString('ko-KR'),counts:{rules:(p.constitution||[]).length,experiences:(p.experiences||[]).length,next:(p.nextWork||[]).length},merge:{rules,experiences:exp}});
+      data.patchImports.unshift({patchId:p.packageId,type:'Daily Closing',project:p.project||'Studio OS',version:p.version||'-',date:new Date().toLocaleString('ko-KR'),counts:{rules:(p.constitution||[]).length,assets:0,experiences:(p.experiences||[]).length}});
+      saveData();pendingPatch19=null;pending240=null;renderExperience19();toast('Daily Closing Merge 완료');
+    }catch(e){toast(`Daily Closing 적용 실패: ${e.message}`);}
+  };
+
+  /* Route Daily Closing preview's apply action to enhanced merge. */
+  const oldPreview240=window.previewPatchFile240;
+  window.previewPatchFile240=async function(){await oldPreview240();if(pendingPatch19?.schema==='studio-os-daily-closing-v1'){const btn=[...document.querySelectorAll('#patchPreview19 button')].find(x=>x.textContent.includes('Merge 적용'));if(btn)btn.onclick=()=>applyDailyClosingV240();}};
+
+  /* Release metadata */
+  data.releaseNotes=data.releaseNotes||[];
+  if(!data.releaseNotes.some(x=>x.id==='RN-2.4.0'))data.releaseNotes.unshift({id:'RN-2.4.0',version:'v2.4.0',date:'2026-08-08',title:'Patch Engine Complete',newItems:['Project Diff Engine','Import Merge Engine','Smart Daily Closing','Before/After Preview','Schema Manager','퇴근 세트 생성'],improved:['Development/Release Patch 정식 schema 사용','Patch/Daily Closing 중복 병합','Patch Center 검증 흐름'],fixed:['Export 버튼 연결 누락','추정 Patch schema 호환 문제'],removed:[],experiences:['EXP-063']});
+  saveData();
+
+  const baseRoadmap240=renderRoadmap;renderRoadmap=function(){baseRoadmap240();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.4.0'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.4.0 · Patch Engine Complete — 현재</strong><p>Diff · Merge · Smart Closing · Before/After Preview · Schema Manager</p></div>');};pages.roadmap=renderRoadmap;
+  const baseSystem240=pages.system;pages.system=function(){baseSystem240();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Patch Engine Complete</p></div><div class="system-value-222"><strong>Studio OS v2.4.0</strong></div>';};
+  document.title='Studio OS v2.4.0 · Patch Engine Complete';
+  const brand240=document.querySelector('.brand small');if(brand240)brand240.textContent='Patch Engine Complete · v2.4.0';
+  buildNav();
+})();

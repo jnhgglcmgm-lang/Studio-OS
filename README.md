@@ -1,3 +1,7 @@
+# Studio OS V2.4.0
+
+Patch Engine Complete release. 기존 UI를 유지하면서 Patch/Daily Closing 운영 엔진을 완성한 버전입니다.
+
 # Studio OS v2.3.7 — Builder Complete
 
 실행: `index.html`
