@@ -3213,3 +3213,79 @@ pages.builder=renderBuilder230;
 const renderRoadmapV236Base237=renderRoadmap;renderRoadmap=function(){renderRoadmapV236Base237();const rows=document.querySelector('.roadmap-line');if(rows&&!rows.textContent.includes('v2.3.7'))rows.insertAdjacentHTML('beforeend','<div class="roadmap-row current-roadmap"><strong>v2.3.7 · Builder Complete — 100%</strong><p>AI Package Export · GPT Prompt · Build History · Asset Registry · Placeholder Fix</p></div>');};pages.roadmap=renderRoadmap;
 const renderSystemV236Base237=pages.system;pages.system=function(){renderSystemV236Base237();const rows=[...document.querySelectorAll('.system-row-222')];const version=rows.find(x=>x.textContent.includes('Version'));if(version)version.innerHTML='<div><h3>Version</h3><p>Builder Complete · Implementation 100%</p></div><div class="system-value-222"><strong>Studio OS v2.3.7</strong></div>';};
 document.title='Studio OS v2.3.7 · Builder Complete';const brand237=document.querySelector('.brand small');if(brand237)brand237.textContent='Builder Complete · v2.3.7';buildNav();
+
+/* ============================================================
+   Studio OS v2.3.7.1 Hotfix — Patch Center Export Wiring
+   2026-08-08
+   Scope: no UI redesign; restore existing Patch/Closing actions.
+   ============================================================ */
+(function hotfixV2371(){
+  /* v1.9 Patch Engine used downloadBlob(), but the final v2.3.7 bundle
+     no longer contains that helper. Reuse the proven downloadText(). */
+  if(typeof window.downloadBlob!=='function'){
+    window.downloadBlob=function(name,text,type='application/json'){
+      return downloadText(name,text,type);
+    };
+  }
+
+  /* Keep generated Daily Closing metadata aligned with the running OS. */
+  if(typeof dailyClosingPayloadV218==='function'){
+    const baseDailyClosingPayloadV2371=dailyClosingPayloadV218;
+    dailyClosingPayloadV218=function(log){
+      const p=baseDailyClosingPayloadV2371(log);
+      p.version='2.3.7.1';
+      p.packageId=`DCP-${p.date}-StudioOS-v2.3.7.1`;
+      return p;
+    };
+  }
+
+  /* Explicit safe exporters: existing UI, restored behavior. */
+  window.downloadPatchV2371=function(type){
+    try{
+      const select=document.querySelector('#patchProject19');
+      if(!select)return toast('프로젝트를 선택하세요.');
+      const id=select.value,p=data.projects.find(x=>x.id===id);
+      if(!p)return toast('프로젝트 정보를 찾을 수 없습니다.');
+      const payload=patchPayload19(type,id);
+      const safe=p.name.replace(/\s+/g,'_');
+      const name=`StudioOS_Patch_${safe}_${payload.projectVersion}_${type}.studioospatch.json`;
+      downloadText(name,JSON.stringify(payload,null,2),'application/json');
+      toast(`${type} Patch를 생성했습니다.`);
+    }catch(e){
+      console.error('[v2.3.7.1] Patch export failed',e);
+      toast(`Patch 생성 실패: ${e.message}`);
+    }
+  };
+
+  window.downloadDailyClosingV2371=function(){
+    try{
+      const log=(data.workMode?.logs||[])[0]||null;
+      const p=dailyClosingPayloadV218(log);
+      downloadText(`StudioOS_DailyClosing_${p.date}.dailyclosing.json`,JSON.stringify(p,null,2),'application/json');
+      toast('Daily Closing 파일을 생성했습니다.');
+    }catch(e){
+      console.error('[v2.3.7.1] Daily Closing export failed',e);
+      toast(`Daily Closing 생성 실패: ${e.message}`);
+    }
+  };
+
+  /* Patch Center UI is kept visually identical; only onclick handlers are
+     pointed at the restored exporters. */
+  const baseRenderPatchCenterV2371=renderPatchCenter19;
+  renderPatchCenter19=function(){
+    baseRenderPatchCenterV2371();
+    const buttons=[...document.querySelectorAll('.patch-actions-v19 button')];
+    const dev=buttons.find(b=>b.textContent.includes('Development Patch'));
+    const rel=buttons.find(b=>b.textContent.includes('Release Patch'));
+    const close=buttons.find(b=>b.textContent.includes('Daily Closing'));
+    if(dev)dev.onclick=()=>downloadPatchV2371('Development');
+    if(rel)rel.onclick=()=>downloadPatchV2371('Release');
+    if(close)close.onclick=()=>downloadDailyClosingV2371();
+  };
+
+  /* Existing page function resolves renderExperience19 -> renderPatchCenter19
+     at runtime, so no layout override is required. */
+  document.title='Studio OS v2.3.7.1 · Patch Center Hotfix';
+  const brand=document.querySelector('.brand small');
+  if(brand)brand.textContent='Builder Complete · v2.3.7.1';
+})();
