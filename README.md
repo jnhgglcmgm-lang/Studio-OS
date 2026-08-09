@@ -22,3 +22,6 @@ Patch Engine Complete release. 기존 UI를 유지하면서 Patch/Daily Closing 
 - 기존 v2.3.5 Experience Guardrails 기능 유지
 
 다음 패치: v2.3.7 Builder Complete — 100%
+
+## v2.4.1
+Version Guard & Safe Import 안정화 패치. 구버전 Patch가 최신 프로젝트를 덮어쓰지 못하며, 이미 롤백된 프로젝트는 최신 Patch 재적용으로 복구할 수 있습니다. 기존 UI 방식은 유지합니다.
